@@ -113,7 +113,7 @@ class ProjectCard extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => DetailPage()),
+          MaterialPageRoute(builder: (context) => DetailPage(projectId: "",)),
         );
       },
       child: Container(

@@ -1,60 +1,57 @@
-// taskselection.dart
+// taskmembers.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-class TaskSelectionPage extends StatefulWidget {
+class TaskMembersPage extends StatefulWidget {
   final String projectId;
   final String currentUserEmail;
 
-  const TaskSelectionPage({
+  const TaskMembersPage({
     required this.projectId,
     required this.currentUserEmail,
   });
 
   @override
-  _TaskSelectionPageState createState() => _TaskSelectionPageState();
+  _TaskMembersPageState createState() => _TaskMembersPageState();
 }
 
-class _TaskSelectionPageState extends State<TaskSelectionPage> {
+class _TaskMembersPageState extends State<TaskMembersPage> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  List<String> _allTasks = [];
-  List<String> _selectedTasks = [];
+  List<String> _projectMembers = [];
+  List<String> _selectedMembers = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadProjectTasks();
+    _loadProjectMembers();
   }
 
-  Future<void> _loadProjectTasks() async {
+  Future<void> _loadProjectMembers() async {
     final sanitizedEmail = widget.currentUserEmail.replaceAll('.', ',');
     final snapshot = await _db
-        .child('members/$sanitizedEmail/projects/${widget.projectId}/tasks')
+        .child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
         .get();
 
     if (snapshot.exists) {
-      final tasksMap = snapshot.value as Map<dynamic, dynamic>;
       setState(() {
-        _allTasks = tasksMap.values
-            .map<String>((task) => task['name']?.toString() ?? 'Unnamed Task')
-            .toList();
+        _projectMembers = List<String>.from(snapshot.value as List<dynamic>);
         _isLoading = false;
       });
     }
   }
 
-  void _toggleTaskSelection(String task) {
+  void _toggleMemberSelection(String member) {
     setState(() {
-      if (_selectedTasks.contains(task)) {
-        _selectedTasks.remove(task);
+      if (_selectedMembers.contains(member)) {
+        _selectedMembers.remove(member);
       } else {
-        _selectedTasks.add(task);
+        _selectedMembers.add(member);
       }
     });
   }
 
-  void _confirmSelection() => Navigator.pop(context, _selectedTasks);
+  void _confirmSelection() => Navigator.pop(context, _selectedMembers);
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +60,7 @@ class _TaskSelectionPageState extends State<TaskSelectionPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text("Select Tasks", style: TextStyle(color: Colors.black)),
+        title: const Text("Select Members", style: TextStyle(color: Colors.black)),
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [
           IconButton(
@@ -76,20 +73,20 @@ class _TaskSelectionPageState extends State<TaskSelectionPage> {
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: _allTasks.length,
+              itemCount: _projectMembers.length,
               itemBuilder: (context, index) {
-                final task = _allTasks[index];
-                final isSelected = _selectedTasks.contains(task);
+                final member = _projectMembers[index];
+                final isSelected = _selectedMembers.contains(member);
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   color: isSelected ? Colors.deepPurple.withOpacity(0.1) : Colors.white,
                   child: ListTile(
-                    title: Text(task),
+                    title: Text(member),
                     trailing: isSelected
                         ? const Icon(Icons.check_circle, color: Colors.deepPurple)
                         : null,
-                    onTap: () => _toggleTaskSelection(task),
+                    onTap: () => _toggleMemberSelection(member),
                   ),
                 );
               },

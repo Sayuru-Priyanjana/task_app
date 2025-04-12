@@ -101,7 +101,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => DetailPage(),
+                              builder: (context) => DetailPage(projectId: "",),
                             ),
                           );
                         },

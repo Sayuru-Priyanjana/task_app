@@ -1,25 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'taskselection.dart';
-import 'addmembers.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'taskmembers.dart';
+import 'taskselection.dart';
 
 class TaskDetailPage extends StatefulWidget {
-  const TaskDetailPage({Key? key}) : super(key: key);
+  final String projectId;
+  final String? taskId;
+  const TaskDetailPage({required this.projectId, this.taskId});
 
   @override
   _TaskDetailPageState createState() => _TaskDetailPageState();
 }
 
 class _TaskDetailPageState extends State<TaskDetailPage> {
-  String taskName = "Create Design System";
-  String taskDescription =
-      "Develop a unified design system including color themes, typography, and reusable components.";
-  DateTime deadline = DateTime(2025, 4, 15);
-  int complexity = 3;
-  int priority = 3;
-  List<String> dependencies = ["Develop Homepage", "UI/UX Research"];
-  List<String> assignedMembers = ["Alice", "Bob", "Charlie"];
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+  final TextEditingController _dueDateController = TextEditingController();
+  String _currentUserEmail = '';
+  int _complexity = 1;
+  int _priority = 1;
+  List<String> _dependencies = [];
+  List<String> _assignedMembers = [];
+  DateTime? _dueDate;
+  bool _isNewTask = true;
+  bool _isLoading = true;
 
   final Map<int, String> priorityLabels = {
     1: "Low",
@@ -35,38 +41,188 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     4: Colors.red,
   };
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _descController = TextEditingController();
-    String _currentUserEmail = '';
+@override
+void initState() {
+  super.initState();
+  
+  _isNewTask = widget.taskId == null;
+  
+  // Load user first, then conditionally load task data
+  _loadCurrentUser().then((_) {
+    if (!_isNewTask) {
+      _loadTaskData();
+    } else {
+      setState(() => _isLoading = false);
+    }
+  });
+}
 
-  @override
-  void initState() {
-    super.initState();
-    _nameController.text = taskName;
-    _descController.text = taskDescription;
-    _loadCurrentUser();
+Future<void> _loadCurrentUser() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('user_email') ?? '';
+    
+    if (email.isEmpty) {
+      print("No email found in SharedPreferences");
+      return;
+    }
+    
+    setState(() {
+      _currentUserEmail = email;
+      print("Current user email set to: $_currentUserEmail");
+    });
+  } catch (e) {
+    print("Error loading current user: $e");
+  }
+}
+
+  Future<void> _loadTaskData() async {
+  bool _hasError = false; // Starts as false
+  try {
+    // Fix email format - replace . with , to match your DB structure
+    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+    print(_currentUserEmail);
+    
+    // Correct path to tasks - they're under projects/{projectId}/tasks
+    final taskSnapshot = await _db.child(
+      'members/$sanitizedEmail/projects/${widget.projectId}/tasks/${widget.taskId}'
+    ).get();
+
+    print("Trying to load from path: members/$sanitizedEmail/projects/${widget.projectId}/tasks/${widget.taskId}");
+    
+    if (taskSnapshot.exists) {
+      final taskData = taskSnapshot.value as Map<dynamic, dynamic>;
+      
+      setState(() {
+        _nameController.text = taskData['name'] ?? '';
+        _descController.text = taskData['description'] ?? '';
+        _complexity = taskData['complextivity'] ?? 1;
+        _priority = taskData['priority'] ?? 1;
+        _assignedMembers = List<String>.from(taskData['assign_to'] ?? []);
+        _dependencies = List<String>.from(taskData['dependencies'] ?? []);
+        
+        if (taskData['due_date'] != null) {
+          try {
+            _dueDate = DateTime.parse(taskData['due_date']);
+            _dueDateController.text = _formatDate(_dueDate!);
+          } catch (e) {
+            print("Error parsing date: ${taskData['due_date']}");
+          }
+        }
+        
+        _isLoading = false;
+      });
+    } else {
+      print("Snapshot doesn't exist at the specified path");
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
+  } catch (e) {
+    print("Error loading task data: $e");
+    setState(() {
+      _isLoading = false;
+      _hasError = true;
+    });
+  }
+}
+
+  Future<void> _saveTask() async {
+    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+    final taskData = {
+      'name': _nameController.text,
+      'description': _descController.text,
+      'complextivity': _complexity,
+      'priority': _priority,
+      'assign_to': _assignedMembers,
+      'dependencies': _dependencies,
+      'status': false,
+      'due_date': _dueDate?.toIso8601String().split('T').first,
+    };
+
+    if (_isNewTask) {
+      final newTaskRef = _db.child(
+          'members/$sanitizedEmail/projects/${widget.projectId}/tasks').push();
+      await newTaskRef.set(taskData);
+    } else {
+      await _db.child(
+          'members/$sanitizedEmail/projects/${widget.projectId}/tasks/${widget.taskId}')
+          .update(taskData);
+    }
+    
+    Navigator.pop(context);
   }
 
+  Future<void> _selectDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _dueDate = picked;
+        _dueDateController.text = _formatDate(picked);
+      });
+    }
+  }
 
+  String _formatDate(DateTime date) {
+    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+  }
 
-  Future<void> _loadCurrentUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _currentUserEmail = prefs.getString('user_email') ?? '';
-     
-    });
+  Future<void> _selectMembers() async {
+    final selectedMembers = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TaskMembersPage(
+          projectId: widget.projectId,
+          currentUserEmail: _currentUserEmail,
+        ),
+      ),
+    );
+
+    if (selectedMembers != null) {
+      setState(() => _assignedMembers = selectedMembers);
+    }
+  }
+
+  Future<void> _selectDependencies() async {
+    final selectedTasks = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TaskSelectionPage(
+          projectId: widget.projectId,
+          currentUserEmail: _currentUserEmail,
+        ),
+      ),
+    );
+
+    if (selectedTasks != null) {
+      setState(() => _dependencies = selectedTasks);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading && !_isNewTask) {
+      return Scaffold(
+        backgroundColor: Color.lerp(Colors.white, const Color(0xFF7C46F0), 0.15),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Color.lerp(Colors.white, const Color(0xFF7C46F0), 0.15),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          "Task Details",
-          style: TextStyle(
+        title: Text(
+          _isNewTask ? "New Task" : "Task Details",
+          style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.bold,
             fontSize: 22,
@@ -74,6 +230,12 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         ),
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _saveTask,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -115,6 +277,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                     ),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
+                      hintText: "Task name",
                       focusedBorder: UnderlineInputBorder(
                         borderSide: BorderSide(color: Colors.deepPurple),
                       ),
@@ -122,14 +285,13 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: _getComplexityColor(),
+                    color: priorityColors[_complexity],
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    priorityLabels[complexity]!,
+                    "Lv. $_complexity",
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -144,13 +306,9 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               controller: _descController,
               cursorColor: Colors.black,
               maxLines: 3,
-              style: const TextStyle(
-                fontSize: 15,
-                color: Colors.black87,
-                height: 1.4,
-              ),
               decoration: const InputDecoration(
                 border: InputBorder.none,
+                hintText: "Task description",
                 focusedBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: Colors.black),
                 ),
@@ -165,7 +323,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                 _buildInfoItem(
                   Icons.calendar_today,
                   "Deadline",
-                  "${deadline.year}-${deadline.month.toString().padLeft(2, '0')}-${deadline.day.toString().padLeft(2, '0')}",
+                  _dueDate != null ? _formatDate(_dueDate!) : "Select date",
                   onTap: _selectDate,
                 ),
                 _buildPrioritySelector(),
@@ -193,7 +351,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         GestureDetector(
           onTap: _showPriorityOptions,
           child: Text(
-            priorityLabels[priority]!,
+            priorityLabels[_priority]!,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -221,66 +379,21 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              ListTile(
+              ...priorityLabels.entries.map((entry) => ListTile(
                 leading: Container(
                   width: 24,
                   height: 24,
-                  decoration: const BoxDecoration(
-                    color: Colors.green,
+                  decoration: BoxDecoration(
+                    color: priorityColors[entry.key],
                     shape: BoxShape.circle,
                   ),
                 ),
-                title: const Text("1 - Low"),
+                title: Text("${entry.key} - ${entry.value}"),
                 onTap: () {
-                  setState(() => priority = 1);
+                  setState(() => _priority = entry.key);
                   Navigator.pop(context);
                 },
-              ),
-              ListTile(
-                leading: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                    color: Colors.blue,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: const Text("2 - Medium"),
-                onTap: () {
-                  setState(() => priority = 2);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                    color: Colors.orange,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: const Text("3 - High"),
-                onTap: () {
-                  setState(() => priority = 3);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: const Text("4 - Very High"),
-                onTap: () {
-                  setState(() => priority = 4);
-                  Navigator.pop(context);
-                },
-              ),
+              )),
             ],
           ),
         );
@@ -309,17 +422,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
             ),
             const SizedBox(height: 16),
             GestureDetector(
-              onTap: () async {
-                final selectedTasks = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => TaskSelectionPage(),
-                  ),
-                );
-                if (selectedTasks != null) {
-                  setState(() => dependencies = selectedTasks);
-                }
-              },
+              onTap: _selectDependencies,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -340,12 +443,11 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: dependencies
+                    children: _dependencies
                         .map((task) => Chip(
                               label: Text(task),
                               backgroundColor: Colors.grey[200],
-                              labelStyle:
-                                  const TextStyle(color: Colors.black87),
+                              labelStyle: const TextStyle(color: Colors.black87),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
@@ -380,9 +482,9 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
           height: 100,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: assignedMembers.length + 1,
+            itemCount: _assignedMembers.length + 1,
             itemBuilder: (context, index) {
-              if (index == assignedMembers.length) {
+              if (index == _assignedMembers.length) {
                 return Padding(
                   padding: const EdgeInsets.only(left: 12),
                   child: CircleAvatar(
@@ -390,19 +492,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                     backgroundColor: Colors.grey[200],
                     child: IconButton(
                       icon: const Icon(Icons.add, size: 28),
-                      onPressed: () async {
-                        final newMember = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MembersPage(
-                              currentUserEmail: _currentUserEmail,
-                            ),
-                          ),
-                        );
-                        if (newMember != null) {
-                          setState(() => assignedMembers.add(newMember));
-                        }
-                      },
+                      onPressed: _selectMembers,
                     ),
                   ),
                 );
@@ -415,7 +505,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                       radius: 36,
                       backgroundColor: _getMemberColor(index),
                       child: Text(
-                        assignedMembers[index][0],
+                        _getInitials(_assignedMembers[index]),
                         style: const TextStyle(
                           fontSize: 24,
                           color: Colors.white,
@@ -425,7 +515,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      assignedMembers[index],
+                      _assignedMembers[index].split('@').first,
                       style: const TextStyle(fontSize: 14),
                     ),
                   ],
@@ -466,21 +556,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     );
   }
 
-  Color _getComplexityColor() {
-    switch (complexity) {
-      case 1:
-        return Colors.green;
-      case 2:
-        return Colors.blue;
-      case 3:
-        return Colors.orange;
-      case 4:
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
   Color _getMemberColor(int index) {
     final colors = [
       Colors.deepPurple,
@@ -492,15 +567,17 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     return colors[index % colors.length];
   }
 
-  Future<void> _selectDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: deadline,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null && picked != deadline) {
-      setState(() => deadline = picked);
-    }
+  String _getInitials(String email) {
+    final parts = email.split('@').first.split('.');
+    if (parts.length > 1) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return email.substring(0, 2).toUpperCase();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    _dueDateController.dispose();
+    super.dispose();
   }
 }
