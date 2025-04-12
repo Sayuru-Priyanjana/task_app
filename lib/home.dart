@@ -285,8 +285,8 @@ Widget _buildInProgressTasks() {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          // builder: (context) => DetailPage(projectId: project['id']),
-                          builder: (context) => DetailPage(),
+                          builder: (context) => DetailPage(projectId: project['id']),
+                          // builder: (context) => DetailPage(),
                         ),
                       );
                     },

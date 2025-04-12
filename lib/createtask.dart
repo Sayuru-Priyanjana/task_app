@@ -1,14 +1,22 @@
+// createtask.dart
 import 'package:flutter/material.dart';
-import 'addmembers.dart';
-import 'taskselection.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'taskselection.dart';
+import 'taskmembers.dart';
 
 class Createtaskpage extends StatefulWidget {
+  final String projectId;
+  
+  const Createtaskpage({required this.projectId});
+
   @override
   TaskdetailState createState() => TaskdetailState();
 }
 
 class TaskdetailState extends State<Createtaskpage> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
   TextEditingController _taskNameController = TextEditingController();
   TextEditingController _taskDescController = TextEditingController();
   DateTime? _selectedDeadline;
@@ -18,7 +26,6 @@ class TaskdetailState extends State<Createtaskpage> {
   String _currentUserEmail = '';
 
   final List<int> complexityLevels = [1, 2, 3, 4];
-
   final Map<int, String> complexityLabels = {
     1: "Low",
     2: "Medium",
@@ -26,7 +33,7 @@ class TaskdetailState extends State<Createtaskpage> {
     4: "Very High",
   };
 
-    @override
+  @override
   void initState() {
     super.initState();
     _loadCurrentUser();
@@ -36,7 +43,6 @@ class TaskdetailState extends State<Createtaskpage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _currentUserEmail = prefs.getString('user_email') ?? '';
-     
     });
   }
 
@@ -48,55 +54,74 @@ class TaskdetailState extends State<Createtaskpage> {
       lastDate: DateTime(2100),
     );
     if (pickedDate != null) {
-      setState(() {
-        _selectedDeadline = pickedDate;
-      });
+      setState(() => _selectedDeadline = pickedDate);
     }
   }
 
   void _addDependency() async {
-    final selectedTask = await Navigator.push(
+    final selectedTasks = await Navigator.push<List<String>>(
       context,
       MaterialPageRoute(
-        builder: (context) => TaskSelectionPage(),
-      ),
-    );
-
-    if (selectedTask != null) {
-      setState(() {
-        _dependencies.add(selectedTask);
-      });
-    }
-  }
-
-  void _navigateToAddMembersPage() async {
-    final String? newMember = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MembersPage(
+        builder: (context) => TaskSelectionPage(
+          projectId: widget.projectId,
           currentUserEmail: _currentUserEmail,
         ),
       ),
     );
 
-    if (newMember != null && newMember.isNotEmpty) {
-      setState(() {
-        _assignedMembers.add(newMember);
-      });
+    if (selectedTasks != null) {
+      setState(() => _dependencies = selectedTasks);
     }
   }
 
-  void _saveTask() {
+  void _addMembers() async {
+    final selectedMembers = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TaskMembersPage(
+          projectId: widget.projectId,
+          currentUserEmail: _currentUserEmail,
+        ),
+      ),
+    );
+
+    if (selectedMembers != null) {
+      setState(() => _assignedMembers = selectedMembers);
+    }
+  }
+
+  Future<void> _saveTask() async {
     if (_taskNameController.text.isEmpty ||
         _selectedDeadline == null ||
         _selectedComplexity == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Please fill all required fields!")),
+        const SnackBar(content: Text("Please fill all required fields!")),
       );
       return;
     }
-    print("Task Created: ${_taskNameController.text}");
-    Navigator.pop(context);
+
+    try {
+      final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+      final taskRef = _db
+          .child('members/$sanitizedEmail/projects/${widget.projectId}/tasks')
+          .push();
+
+      await taskRef.set({
+        'name': _taskNameController.text,
+        'description': _taskDescController.text,
+        'due_date': DateFormat('yyyy-MM-dd').format(_selectedDeadline!),
+        'complextivity': _selectedComplexity,
+        'dependency': _dependencies,
+        'assign_to': _assignedMembers,
+        'status': false
+      });
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error saving task: ${e.toString()}")),
+      );
+    }
   }
 
   @override
@@ -106,10 +131,7 @@ class TaskdetailState extends State<Createtaskpage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          "Create Task",
-          style: TextStyle(color: Colors.black),
-        ),
+        title: const Text("Create Task", style: TextStyle(color: Colors.black)),
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [
           IconButton(
@@ -145,8 +167,7 @@ class TaskdetailState extends State<Createtaskpage> {
                 title: Text(
                   _selectedDeadline == null
                       ? "Select Deadline"
-                      : "Deadline: ${_selectedDeadline!.toLocal()}"
-                          .split(' ')[0],
+                      : "Deadline: ${DateFormat('yyyy-MM-dd').format(_selectedDeadline!)}",
                 ),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: _pickDeadline,
@@ -164,18 +185,14 @@ class TaskdetailState extends State<Createtaskpage> {
                     child: Text("$level - ${complexityLabels[level]}"),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedComplexity = value;
-                  });
-                },
+                onChanged: (value) => setState(() => _selectedComplexity = value),
                 decoration: const InputDecoration(
                   labelText: "Task Complexity",
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text("Dependencies",
+              const Text("Dependencies", 
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               _dependencies.isEmpty
@@ -188,27 +205,18 @@ class TaskdetailState extends State<Createtaskpage> {
                           .map((dep) => Chip(
                                 label: Text(dep),
                                 deleteIcon: const Icon(Icons.close),
-                                onDeleted: () {
-                                  setState(() {
-                                    _dependencies.remove(dep);
-                                  });
-                                },
+                                onDeleted: () => setState(() => _dependencies.remove(dep)),
                               ))
                           .toList(),
                     ),
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text(
-                  "Add Dependency",
-                  style: TextStyle(color: Colors.white),
-                ),
+                label: const Text("Add Dependency", style: TextStyle(color: Colors.white)),
                 onPressed: _addDependency,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurple,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
               const SizedBox(height: 20),
@@ -225,27 +233,18 @@ class TaskdetailState extends State<Createtaskpage> {
                           .map((member) => Chip(
                                 label: Text(member),
                                 deleteIcon: const Icon(Icons.close),
-                                onDeleted: () {
-                                  setState(() {
-                                    _assignedMembers.remove(member);
-                                  });
-                                },
+                                onDeleted: () => setState(() => _assignedMembers.remove(member)),
                               ))
                           .toList(),
                     ),
               const SizedBox(height: 8),
               ElevatedButton.icon(
                 icon: const Icon(Icons.person_add, color: Colors.white),
-                label: const Text(
-                  "Add Member",
-                  style: TextStyle(color: Colors.white),
-                ),
-                onPressed: _navigateToAddMembersPage,
+                label: const Text("Add Member", style: TextStyle(color: Colors.white)),
+                onPressed: _addMembers,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurple,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],

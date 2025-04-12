@@ -93,7 +93,7 @@ class _OfficeProjectsScreenState extends State<OfficeProjectsScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (context) => DetailPage()),
+                                builder: (context) => DetailPage(projectId: "",)),
                           );
                         },
                         onLongPress: () {
