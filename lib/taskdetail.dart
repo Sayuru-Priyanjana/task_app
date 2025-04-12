@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'taskselection.dart';
 import 'addmembers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TaskDetailPage extends StatefulWidget {
   const TaskDetailPage({Key? key}) : super(key: key);
@@ -36,12 +37,24 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
+    String _currentUserEmail = '';
 
   @override
   void initState() {
     super.initState();
     _nameController.text = taskName;
     _descController.text = taskDescription;
+    _loadCurrentUser();
+  }
+
+
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserEmail = prefs.getString('user_email') ?? '';
+     
+    });
   }
 
   @override
@@ -381,7 +394,9 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                         final newMember = await Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => MembersPage(),
+                            builder: (context) => MembersPage(
+                              currentUserEmail: _currentUserEmail,
+                            ),
                           ),
                         );
                         if (newMember != null) {
