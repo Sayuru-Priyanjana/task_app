@@ -1,54 +1,49 @@
+// addmembers.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class MembersPage extends StatefulWidget {
+  final String currentUserEmail;
+
+  const MembersPage({required this.currentUserEmail});
+
   @override
   _MembersPageState createState() => _MembersPageState();
 }
 
 class _MembersPageState extends State<MembersPage> {
-  final List<String> members = [
-    "John Doe",
-    "Tharushi kavindya",
-    "pamaya hussen",
-    "dilshan kavindu",
-    "pramuda Davis",
-    "Elina wickramge",
-    "samindi kularathna",
-    "Grace Black",
-  ];
-
-  List<String> filteredMembers = [];
-  Set<String> selectedMembers = Set();
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  List<String> _allMembers = [];
+  List<String> _filteredMembers = [];
+  Set<String> _selectedMembers = Set();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    filteredMembers = members;
+    _loadMembers();
   }
 
-  void filterMembers(String query) {
+  Future<void> _loadMembers() async {
+    final snapshot = await _db.child('members').get();
+    if (snapshot.exists) {
+      final membersMap = snapshot.value as Map<dynamic, dynamic>;
+      setState(() {
+        _allMembers = membersMap.keys
+            .where((key) => key != widget.currentUserEmail.replaceAll('.', ','))
+            .map((key) => key.toString().replaceAll(',', '.'))
+            .toList();
+        _filteredMembers = _allMembers;
+      });
+    }
+  }
+
+  void _filterMembers(String query) {
     setState(() {
-      filteredMembers = members
-          .where((member) => member.toLowerCase().contains(query.toLowerCase()))
-          .toList();
+      _searchQuery = query.toLowerCase();
+      _filteredMembers = _allMembers.where((email) 
+          => email.toLowerCase().contains(_searchQuery)).toList();
     });
-  }
-
-  void toggleMemberSelection(String member) {
-    setState(() {
-      if (selectedMembers.contains(member)) {
-        selectedMembers.remove(member);
-      } else {
-        selectedMembers.add(member);
-        print(selectedMembers);
-      }
-    });
-  }
-
-  void addSelectedMembers() {
-    // Here you would typically do something with the selected members
-    print("Added members: $selectedMembers");
-    Navigator.pop(context, selectedMembers.toList());
   }
 
   @override
@@ -56,19 +51,12 @@ class _MembersPageState extends State<MembersPage> {
     return Scaffold(
       backgroundColor: Color.lerp(Colors.white, Color(0xFF7C46F0), 0.15)!,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          "Add Members",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: false,
+        title: Text('Select Members'),
         actions: [
-          if (selectedMembers.isNotEmpty)
-            IconButton(
-              icon: Icon(Icons.done, color: Colors.deepPurple),
-              onPressed: addSelectedMembers,
-            ),
+          IconButton(
+            icon: Icon(Icons.check),
+            onPressed: () => Navigator.pop(context, _selectedMembers.toList()),
+          )
         ],
       ),
       body: Column(
@@ -77,72 +65,30 @@ class _MembersPageState extends State<MembersPage> {
             padding: EdgeInsets.all(16),
             child: TextField(
               decoration: InputDecoration(
-                hintText: "Search members...",
-                prefixIcon: Icon(Icons.search, color: Colors.deepPurple),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.deepPurple),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.deepPurple),
-                ),
+                hintText: 'Search by email...',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
               ),
-              onChanged: filterMembers,
+              onChanged: _filterMembers,
             ),
           ),
-          if (selectedMembers.isNotEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Text(
-                    "${selectedMembers.length} selected",
-                    style: TextStyle(
-                      color: Colors.deepPurple,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Spacer(),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        selectedMembers.clear();
-                      });
-                    },
-                    child: Text(
-                      "Clear",
-                      style: TextStyle(color: Colors.deepPurple),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           Expanded(
             child: ListView.builder(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              itemCount: filteredMembers.length,
+              itemCount: _filteredMembers.length,
               itemBuilder: (context, index) {
-                final member = filteredMembers[index];
-                final isSelected = selectedMembers.contains(member);
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        isSelected ? Colors.deepPurple : Colors.deepPurple[100],
-                    child: Icon(Icons.person,
-                        color: isSelected ? Colors.white : Colors.deepPurple),
-                  ),
-                  title: Text(
-                    member,
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                  trailing: isSelected
-                      ? Icon(Icons.check_circle, color: Colors.deepPurple)
-                      : Icon(Icons.add, color: Colors.deepPurple),
-                  onTap: () => toggleMemberSelection(member),
+                final email = _filteredMembers[index];
+                return CheckboxListTile(
+                  title: Text(email),
+                  value: _selectedMembers.contains(email),
+                  onChanged: (bool? value) {
+                    setState(() {
+                      if (value == true) {
+                        _selectedMembers.add(email);
+                      } else {
+                        _selectedMembers.remove(email);
+                      }
+                    });
+                  },
                 );
               },
             ),

@@ -4,8 +4,13 @@ import 'chat.dart';
 import 'database.dart';
 import 'createtask.dart';
 import 'taskdetail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DetailPage extends StatefulWidget {
+
+  // final String projectId;
+  // const DetailPage({required this.projectId});
+
   @override
   _DetailPageState createState() => _DetailPageState();
 }
@@ -17,10 +22,12 @@ class _DetailPageState extends State<DetailPage> {
   bool isEditing = false;
   TextEditingController titleController = TextEditingController();
   TextEditingController descriptionController = TextEditingController();
+    String _currentUserEmail = '';
 
   @override
   void initState() {
     super.initState();
+    _loadCurrentUser();
     titleController.text = projectTitle;
     descriptionController.text = projectDescription;
   }
@@ -30,6 +37,16 @@ class _DetailPageState extends State<DetailPage> {
     titleController.dispose();
     descriptionController.dispose();
     super.dispose();
+  }
+
+
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserEmail = prefs.getString('user_email') ?? '';
+     
+    });
   }
 
   void _toggleEditing() {
@@ -236,7 +253,9 @@ class _DetailPageState extends State<DetailPage> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => MembersPage()),
+                  MaterialPageRoute(builder: (context) => MembersPage(
+                    currentUserEmail: _currentUserEmail,
+                  )),
                 );
               },
               child: Container(

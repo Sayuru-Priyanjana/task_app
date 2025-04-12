@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:task_app/auth/login.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class SignupPage extends StatefulWidget {
   @override
@@ -13,6 +14,56 @@ class _SignupPageState extends State<SignupPage> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmpasswordController =
       TextEditingController();
+
+  // Reference to the Firebase Realtime Database
+  final DatabaseReference _database = FirebaseDatabase.instance.ref();
+
+  // Function to upload member data to Firebase
+  void _uploadMemberData() {
+    // Check if passwords match
+    if (_passwordController.text != _confirmpasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Passwords do not match')),
+      );
+      return;
+    }
+
+    // Validate email format
+    if (!_emailController.text.contains('@') || !_emailController.text.contains('.')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please enter a valid email address')),
+      );
+      return;
+    }
+
+    // Create member data map
+    Map<String, dynamic> memberData = {
+      'name': _nameController.text,
+      'email': _emailController.text,
+      'phone': _phonenumberController.text,
+      'password': _passwordController.text, // Note: In production, you should hash passwords
+    };
+
+    // Upload to Firebase
+    _database.child('members').child(_emailController.text.replaceAll('.', ',')).set(memberData)
+      .then((_) {
+        // Success
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration successful!')),
+        );
+        // Navigate to login page after successful registration
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => LoginPage()),
+        );
+      })
+      .catchError((error) {
+        // Error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration failed: $error')),
+        );
+      });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +113,7 @@ class _SignupPageState extends State<SignupPage> {
                           padding: EdgeInsets.symmetric(
                               horizontal: 50, vertical: 15),
                         ),
-                        onPressed: () {},
+                        onPressed: _uploadMemberData,
                         child: Text(
                           'Sign Up',
                           style: TextStyle(color: Colors.white, fontSize: 18),

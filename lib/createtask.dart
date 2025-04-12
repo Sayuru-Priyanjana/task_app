@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'addmembers.dart';
 import 'taskselection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Createtaskpage extends StatefulWidget {
   @override
@@ -14,6 +15,7 @@ class TaskdetailState extends State<Createtaskpage> {
   int? _selectedComplexity;
   List<String> _dependencies = [];
   List<String> _assignedMembers = [];
+  String _currentUserEmail = '';
 
   final List<int> complexityLevels = [1, 2, 3, 4];
 
@@ -23,6 +25,20 @@ class TaskdetailState extends State<Createtaskpage> {
     3: "High",
     4: "Very High",
   };
+
+    @override
+  void initState() {
+    super.initState();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUserEmail = prefs.getString('user_email') ?? '';
+     
+    });
+  }
 
   void _pickDeadline() async {
     DateTime? pickedDate = await showDatePicker(
@@ -57,7 +73,9 @@ class TaskdetailState extends State<Createtaskpage> {
     final String? newMember = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => MembersPage(),
+        builder: (context) => MembersPage(
+          currentUserEmail: _currentUserEmail,
+        ),
       ),
     );
 
