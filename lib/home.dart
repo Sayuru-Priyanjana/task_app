@@ -9,9 +9,9 @@ import 'tasks.dart';
 import 'user.dart';
 import 'events.dart';
 import 'detail.dart';
-
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'catogery_projects.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -20,6 +20,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _showAllTasks = false;
+  bool _showAllProjects = false;
   String? userName;
   String? userEmail;
 
@@ -27,10 +28,39 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadUserData();
+    fetchAndSaveIp(); // Fetch and save IP when the app starts
   }
 
 
-    Future<void> _loadUserData() async {
+  // Fetch IP from Firebase and save to SharedPreferences
+Future<void> fetchAndSaveIp() async {
+  try {
+    // 1. Get IP from Firebase Realtime Database
+    final databaseRef = FirebaseDatabase.instance.ref("ip");
+    final snapshot = await databaseRef.get();
+
+    if (snapshot.exists) {
+      final ip = snapshot.value.toString();
+
+      // 2. Save IP to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ip', ip);
+      print("IP saved: $ip");
+    } else {
+      print("IP not found in Firebase");
+    }
+  } catch (e) {
+    print("Error fetching IP: $e");
+  }
+}
+
+// Retrieve saved IP from SharedPreferences
+Future<String?> getSavedIp() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('ip'); // Returns null if not set
+}
+
+  Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       userName = prefs.getString('user_name') ?? 'Guest';
@@ -59,9 +89,9 @@ class _HomePageState extends State<HomePage> {
                 Icons.add,
                 () {
                   Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => AddProjectPage()));
+                    context,
+                    MaterialPageRoute(builder: (context) => AddProjectPage()),
+                  );
                 },
                 width: fullWidth,
                 isCentered: true,
@@ -70,14 +100,16 @@ class _HomePageState extends State<HomePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _buildCard('Budget', Icons.attach_money_sharp, () {
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (context) => Budget()));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => Budget()),
+                    );
                   }, width: (fullWidth - 8) / 2),
                   _buildCard('Insights', CupertinoIcons.graph_square_fill, () {
                     Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => InsightsPage()));
+                      context,
+                      MaterialPageRoute(builder: (context) => InsightsPage()),
+                    );
                   }, width: (fullWidth - 8) / 2),
                 ],
               ),
@@ -99,8 +131,10 @@ class _HomePageState extends State<HomePage> {
       children: [
         GestureDetector(
           onTap: () {
-            Navigator.push(context,
-                MaterialPageRoute(builder: (context) => ProfilePage()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => ProfilePage()),
+            );
           },
           child: CircleAvatar(
             radius: 20,
@@ -139,8 +173,10 @@ class _HomePageState extends State<HomePage> {
               SizedBox(height: 10),
               ElevatedButton(
                 onPressed: () {
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (context) => TasksPage()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => TasksPage()),
+                  );
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
@@ -234,108 +270,108 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-Widget _buildInProgressTasks() {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  String? currentUserEmail;
-  bool _showAllProjects = false;
+  Widget _buildInProgressTasks() {
+    final DatabaseReference _db = FirebaseDatabase.instance.ref();
+    String? currentUserEmail;
 
-  return FutureBuilder(
-    future: SharedPreferences.getInstance(),
-    builder: (context, snapshot) {
-      if (snapshot.hasData) {
-        final prefs = snapshot.data as SharedPreferences;
-        currentUserEmail = prefs.getString('user_email');
-        
-        if (currentUserEmail == null) {
-          return Center(child: Text("User not logged in"));
+    return FutureBuilder(
+      future: SharedPreferences.getInstance(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final prefs = snapshot.data as SharedPreferences;
+          currentUserEmail = prefs.getString('user_email');
+          
+          if (currentUserEmail == null) {
+            return Center(child: Text("User not logged in"));
+          }
+
+          final sanitizedEmail = currentUserEmail!.replaceAll('.', ',');
+          
+          return StreamBuilder(
+            stream: _db.child('members/$sanitizedEmail/projects').onValue,
+            builder: (context, projectSnapshot) {
+              if (projectSnapshot.hasError) {
+                return Center(child: Text("Error loading projects"));
+              }
+
+              if (projectSnapshot.connectionState == ConnectionState.waiting) {
+                return Center(child: CircularProgressIndicator());
+              }
+
+              if (!projectSnapshot.hasData || projectSnapshot.data!.snapshot.value == null) {
+                return Center(child: Text("No projects found"));
+              }
+
+              final projectsMap = projectSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+              final projects = projectsMap.entries.map((entry) {
+                return {
+                  'id': entry.key,
+                  'title': entry.value['name'] ?? 'No Name',
+                  'category': entry.value['catogory'] ?? 'No Category',
+                  'color': _getCategoryColor(entry.value['catogory'] ?? 'Other'),
+                };
+              }).toList();
+
+              return Column(
+                children: [
+                  ...projects.take(_showAllProjects ? projects.length : 2).map((project) {
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => DetailPage(projectId: project['id']),
+                          ),
+                        );
+                      },
+                      child: _buildTaskCard(
+                        project['title'],
+                        project['category'],
+                        project['color'],
+                      ),
+                    );
+                  }).toList(),
+                  if (projects.length > 2)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _showAllProjects = !_showAllProjects;
+                        });
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showAllProjects ? "Show Less" : "Show More",
+                            style: TextStyle(color: Colors.deepPurple),
+                          ),
+                          Icon(
+                            _showAllProjects ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                            color: Colors.deepPurple,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          );
         }
+        return Center(child: CircularProgressIndicator());
+      },
+    );
+  }
 
-        final sanitizedEmail = currentUserEmail!.replaceAll('.', ',');
-        
-        return StreamBuilder(
-          stream: _db.child('members/$sanitizedEmail/projects').onValue,
-          builder: (context, projectSnapshot) {
-            if (projectSnapshot.hasError) {
-              return Center(child: Text("Error loading projects"));
-            }
-
-            if (projectSnapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator());
-            }
-
-            if (!projectSnapshot.hasData || projectSnapshot.data!.snapshot.value == null) {
-              return Center(child: Text("No projects found"));
-            }
-
-            final projectsMap = projectSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-            final projects = projectsMap.entries.map((entry) {
-              return {
-                'id': entry.key,
-                'title': entry.value['name'] ?? 'No Name',
-                'category': entry.value['catogory'] ?? 'No Category',
-                'color': _getCategoryColor(entry.value['catogory'] ?? 'Other'),
-              };
-            }).toList();
-
-            return Column(
-              children: [
-                ...projects.take(_showAllProjects ? projects.length : 2).map((project) {
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => DetailPage(projectId: project['id']),
-                          // builder: (context) => DetailPage(),
-                        ),
-                      );
-                    },
-                    child: _buildTaskCard(
-                      project['title'],
-                      project['category'],
-                      project['color'],
-                    ),
-                  );
-                }).toList(),
-                if (projects.length > 2)
-                  TextButton(
-                    onPressed: () {
-                      setState(() => _showAllProjects = !_showAllProjects);
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _showAllProjects ? "Show Less" : "Show More",
-                          style: TextStyle(color: Colors.deepPurple),
-                        ),
-                        Icon(
-                          _showAllProjects ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                          color: Colors.deepPurple,
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            );
-          },
-        );
-      }
-      return Center(child: CircularProgressIndicator());
-    },
-  );
-}
-
-Color _getCategoryColor(String category) {
-  const colors = {
-    'Office': Colors.lightBlue,
-    'Personal': Colors.orangeAccent,
-    'Study': Colors.purple,
-    'Shopping': Colors.pink,
-    'Other': Colors.green,
-  };
-  return colors[category] ?? Colors.grey;
-}
+  Color _getCategoryColor(String category) {
+    const colors = {
+      'Office': Colors.lightBlue,
+      'Personal': Colors.orangeAccent,
+      'Study': Colors.purple,
+      'Shopping': Colors.pink,
+      'Other': Colors.green,
+    };
+    return colors[category] ?? Colors.grey;
+  }
 
   Widget _buildTaskCard(String title, String category, Color progressColor) {
     return Container(
@@ -370,18 +406,69 @@ Color _getCategoryColor(String category) {
     );
   }
 
-  Widget _buildTaskGroups(BuildContext context) {
-    return Column(
-      children: [
-        _buildTaskGroup("Office Project", 23, 0.25, Colors.pink, context,
-            OfficeProjectsScreen()),
-        _buildTaskGroup("Personal Project", 30, 0.60, Colors.deepPurpleAccent,
-            context, Personalprojectscreen()),
-        _buildTaskGroup(
-            "Events", 30, 0.45, Colors.orange, context, EventsScreen()),
-      ],
-    );
+Widget _buildTaskGroups(BuildContext context) {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  String? currentUserEmail;
+
+  return FutureBuilder(
+    future: SharedPreferences.getInstance(),
+    builder: (context, snapshot) {
+      if (snapshot.hasData) {
+  final prefs = snapshot.data as SharedPreferences;
+  final currentUserEmail = prefs.getString('user_email');
+
+  if (currentUserEmail == null) {
+    return Center(child: Text("User not logged in"));
   }
+
+  final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
+
+        
+        return StreamBuilder(
+          stream: _db.child('members/$sanitizedEmail/projects').onValue,
+          builder: (context, projectSnapshot) {
+            if (projectSnapshot.hasError) {
+              return Center(child: Text("Error loading categories"));
+            }
+
+            if (projectSnapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            if (!projectSnapshot.hasData || projectSnapshot.data!.snapshot.value == null) {
+              return Center(child: Text("No categories found"));
+            }
+
+            final projectsMap = projectSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+            Map<String, int> categoryCounts = {};
+
+            projectsMap.forEach((_, project) {
+              final category = project['catogory'] ?? 'Uncategorized';
+              categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+            });
+
+            return Column(
+              children: categoryCounts.entries.map((entry) {
+                final category = entry.key;
+                final count = entry.value;
+                
+                return _buildTaskGroup(
+                  category,
+                  count,
+                  0.5, // Replace with actual progress calculation
+                  _getCategoryColor(category),
+                  context,
+                  CategoryProjectsScreen(category: category),
+                );
+              }).toList(),
+            );
+          },
+        );
+      }
+      return Center(child: CircularProgressIndicator());
+    },
+  );
+}
 
   Widget _buildCard(String title, IconData icon, VoidCallback onTap,
       {double? width, bool isCentered = false}) {
@@ -421,7 +508,9 @@ Color _getCategoryColor(String category) {
       onTap: () {
         if (destination != null) {
           Navigator.push(
-              context, MaterialPageRoute(builder: (context) => destination));
+            context,
+            MaterialPageRoute(builder: (context) => destination),
+          );
         }
       },
       child: Container(

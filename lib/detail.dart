@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'addmembers.dart';
 import 'chat.dart';
 import 'createtask.dart';
 import 'taskdetail.dart';
 import 'update_project_member.dart';
+import 'package:intl/intl.dart';
 
 class DetailPage extends StatefulWidget {
   final String projectId;
@@ -25,6 +28,9 @@ class _DetailPageState extends State<DetailPage> {
   Map<String, dynamic> _tasks = {};
   String? _dueDate;
   String? _category;
+  bool _isLoadingTasks = false;
+  String _flaskServerUrl = 'http://127.0.0.1:5000';
+  bool _sortByPriority = true;
 
   @override
   void initState() {
@@ -34,6 +40,8 @@ class _DetailPageState extends State<DetailPage> {
     _loadCurrentUser();
   }
 
+
+
   Future<void> _loadCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -42,10 +50,40 @@ class _DetailPageState extends State<DetailPage> {
     _loadProjectData();
   }
 
+  Future<void> _deleteProject() async {
+  final shouldDelete = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Delete Project'),
+      content: Text('Are you sure you want to delete this project and all its tasks?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (shouldDelete != true) return;
+
+  final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+  await _db.child('members/$sanitizedEmail/projects/${widget.projectId}').remove();
+  
+  Navigator.pop(context); // Go back to previous screen
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Project deleted')),
+  );
+}
+
   Future<void> _loadProjectData() async {
     final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
     
-    _db.child('members/$sanitizedEmail/projects/${widget.projectId}').onValue.listen((event) {
+    _db.child('members/$sanitizedEmail/projects/${widget.projectId}').onValue.listen((event) async {
       final data = event.snapshot.value as Map<dynamic, dynamic>?;
       if (data != null) {
         setState(() {
@@ -56,76 +94,158 @@ class _DetailPageState extends State<DetailPage> {
           _category = data['catogory'];
           _tasks = data['tasks'] != null ? Map<String, dynamic>.from(data['tasks']) : {};
         });
+        
+        if (_sortByPriority) {
+          await _sortTasksByPriority();
+        }
       }
     });
   }
 
-  Color _getAvatarColor(String email) {
-    final colors = [Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.red];
-    return colors[email.hashCode % colors.length];
+  Future<void> _sortTasksByPriority() async {
+
+
+      // Get IP from SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final String? serverIp = prefs.getString('ip');
+  print('Server IP: $serverIp');
+  
+  if (serverIp == null) {
+    throw Exception('No server IP found in SharedPreferences');
   }
 
-  String _getInitials(String email) {
-    final parts = email.split('@').first.split('.');
-    if (parts.length > 1) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    return email.substring(0, 2).toUpperCase();
-  }
 
-  Future<void> _updateProject() async {
-    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
-    await _db.child('members/$sanitizedEmail/projects/${widget.projectId}').update({
-      'name': _titleController.text,
-      'description': _descriptionController.text
-    });
-    setState(() => _isEditing = false);
-  }
-
-  Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
-    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+    if (_tasks.isEmpty) return;
     
-    // Update task status
-    await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/tasks/$taskId/status').set(newStatus);
+    setState(() => _isLoadingTasks = true);
     
-    // Get task details
-    final taskSnapshot = await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/tasks/$taskId').get();
-    if (taskSnapshot.exists) {
-      final taskData = taskSnapshot.value as Map<dynamic, dynamic>;
-      final complextivity = taskData['complextivity'] ?? 1;
-      final pointsToAdd = complextivity * 5 * (newStatus ? 1 : -1);
-      final assignTo = List<String>.from(taskData['assign_to'] ?? []);
-      
-      // Update points for each assigned member
-      for (final memberEmail in assignTo) {
-        final sanitizedMemberEmail = memberEmail.replaceAll('.', ',');
-        final memberRef = _db.child('members/$sanitizedMemberEmail');
-        
-        final memberSnapshot = await memberRef.get();
-        if (memberSnapshot.exists) {
-          final currentPoints = memberSnapshot.child('points').value as int? ?? 0;
-          await memberRef.update({'points': currentPoints + pointsToAdd});
+    try {
+      List<Map<String, dynamic>> tasksForApi = _tasks.entries.map((entry) {
+        return {
+          'task_id': entry.key,
+          'completed': entry.value['status'] ?? false,
+          'complexity': entry.value['complextivity'] ?? 1,
+          'deadline': entry.value['due_date'] ?? '',
+          'dependencies': entry.value['dependencies']?.join(',') ?? '',
+        };
+      }).toList();
+
+      final response = await http.post(
+        Uri.parse('http://$serverIp:5000/prioritize'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'tasks': tasksForApi}),
+      ).timeout(Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final prioritizedTasks = jsonDecode(response.body)['prioritized_tasks'];
+        Map<String, dynamic> sortedTasks = {};
+        for (var task in prioritizedTasks) {
+          if (_tasks.containsKey(task['task_id'])) {
+            sortedTasks[task['task_id']] = _tasks[task['task_id']];
+          }
         }
+        _tasks.forEach((taskId, taskData) {
+          if (!sortedTasks.containsKey(taskId)) {
+            sortedTasks[taskId] = taskData;
+          }
+        });
+
+        setState(() => _tasks = sortedTasks);
+      } else {
+        _sortTasksLocally();
+      }
+    } catch (e) {
+      _sortTasksLocally();
+    } finally {
+      setState(() => _isLoadingTasks = false);
+    }
+  }
+
+  void _sortTasksLocally() {
+    final entries = _tasks.entries.toList();
+    entries.sort((a, b) {
+      if (a.value['status'] != b.value['status']) {
+        return a.value['status'] ? 1 : -1;
+      }
+      final dateA = DateTime.tryParse(a.value['due_date'] ?? '') ?? DateTime(2100);
+      final dateB = DateTime.tryParse(b.value['due_date'] ?? '') ?? DateTime(2100);
+      final dateCompare = dateA.compareTo(dateB);
+      if (dateCompare != 0) return dateCompare;
+      return (b.value['complextivity'] ?? 1).compareTo(a.value['complextivity'] ?? 1);
+    });
+    setState(() => _tasks = Map.fromEntries(entries));
+  }
+
+Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
+  setState(() {
+    if (_tasks.containsKey(taskId)) {
+      _tasks[taskId]['status'] = newStatus;
+    }
+  });
+
+  final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+  final taskRef = _db.child('members/$sanitizedEmail/projects/${widget.projectId}/tasks/$taskId');
+
+  // Update status
+  await taskRef.child('status').set(newStatus);
+
+  // Update completed_date
+  if (newStatus) {
+    final now = DateTime.now();
+    final formattedDate = DateFormat('yyyy-MM-dd').format(now);
+    await taskRef.child('completed_date').set(formattedDate);
+  } else {
+    await taskRef.child('completed_date').remove();
+  }
+
+  final taskSnapshot = await taskRef.get();
+  if (taskSnapshot.exists) {
+    final taskData = taskSnapshot.value as Map<dynamic, dynamic>;
+    final complextivity = taskData['complextivity'] ?? 1;
+    final pointsToAdd = complextivity * 5 * (newStatus ? 1 : -1);
+    final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+
+    for (final memberEmail in assignTo) {
+      final sanitizedMemberEmail = memberEmail.replaceAll('.', ',');
+      final memberRef = _db.child('members/$sanitizedMemberEmail');
+      final memberSnapshot = await memberRef.get();
+      if (memberSnapshot.exists) {
+        final currentPoints = memberSnapshot.child('points').value as int? ?? 0;
+        await memberRef.update({'points': currentPoints + pointsToAdd});
       }
     }
   }
+
+  if (_sortByPriority) {
+    await _sortTasksByPriority();
+  } else {
+    _sortTasksLocally();
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color.lerp(Colors.white, Color(0xFF7C46F0), 0.15)!,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          "Details",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.chat, color: Colors.black),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Chat())),
-          ),
-        ],
-      ),
+  backgroundColor: Colors.transparent,
+  elevation: 0,
+  title: Text(
+    "Details",
+    style: TextStyle(fontWeight: FontWeight.bold),
+  ),
+  actions: [
+    IconButton(
+      icon: Icon(Icons.delete, color: Colors.red[300]),
+      onPressed: _deleteProject,
+    ),
+    IconButton(
+      icon: Icon(Icons.chat, color: Colors.black),
+      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Chat())),
+    ),
+  ],
+),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(16.0),
         child: Column(
@@ -258,7 +378,7 @@ class _DetailPageState extends State<DetailPage> {
   String _formatDate(String dateString) {
     try {
       final date = DateTime.parse(dateString);
-      return "${_getWeekday(date.weekday)}, ${date.day} ${_getMonth(date.month)}}";
+      return "${_getWeekday(date.weekday)}, ${date.day} ${_getMonth(date.month)}";
     } catch (e) {
       return dateString;
     }
@@ -284,30 +404,34 @@ class _DetailPageState extends State<DetailPage> {
           children: [
             Text("Assigned to", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             IconButton(
-              icon: Icon(Icons.add),
-              onPressed: () async {
-                final selected = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AddProjectMembers(
-                      projectId: widget.projectId,
-                      currentUserEmail: _currentUserEmail,
-                      existingMembers: _assignedMembers,
-                    ),
-                  ),
-                ).then((selectedMembers) {
-                  if (selectedMembers != null) {
-                    setState(() => _assignedMembers = selectedMembers);
-                  }
-                });
-                if (selected != null) {
-                  final updatedMembers = [..._assignedMembers, ...selected].toSet().toList();
-                  final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
-                  await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
-                    .set(updatedMembers);
-                }
-              },
-            ),
+  icon: Icon(Icons.add),
+  onPressed: () async {
+    final selected = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddProjectMembers(
+          projectId: widget.projectId,
+          currentUserEmail: _currentUserEmail,
+          existingMembers: _assignedMembers,
+        ),
+      ),
+    );
+    
+    if (selected != null) {
+      // Convert dynamic list to List<String>
+      final updatedMembers = List<String>.from(
+        [..._assignedMembers, ...selected]
+      ).toSet().toList();
+      
+      final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+      await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
+        .set(updatedMembers);
+      
+      setState(() => _assignedMembers = updatedMembers);
+    }
+  },
+),
+
           ],
         ),
         SizedBox(height: 8),
@@ -341,7 +465,9 @@ class _DetailPageState extends State<DetailPage> {
             ),
           ],
         ),
-        if (_tasks.isEmpty)
+        if (_isLoadingTasks)
+          Center(child: CircularProgressIndicator())
+        else if (_tasks.isEmpty)
           Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(child: Text("No tasks yet")),
@@ -359,6 +485,7 @@ class _DetailPageState extends State<DetailPage> {
     final complextivity = taskData['complextivity'] ?? 1;
     final dueDate = taskData['due_date'] ?? '';
     final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+    final completed_date = taskData['completed_date'] ?? '';
 
     return InkWell(
       onTap: () => Navigator.push(
@@ -390,7 +517,7 @@ class _DetailPageState extends State<DetailPage> {
                     Text("${complextivity * 5} pts"),
                     if (dueDate.isNotEmpty) ...[
                       SizedBox(width: 16),
-                       //Image.asset('assets/calendar.png', width: 10, height: 10),
+                      Icon(Icons.calendar_today, size: 14, color: Colors.grey),
                       SizedBox(width: 8),
                       Text(_formatDate(dueDate)),
                     ],
@@ -445,6 +572,26 @@ class _DetailPageState extends State<DetailPage> {
         ],
       ),
     );
+  }
+
+  Color _getAvatarColor(String email) {
+    final colors = [Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.red];
+    return colors[email.hashCode % colors.length];
+  }
+
+  String _getInitials(String email) {
+    final parts = email.split('@').first.split('.');
+    if (parts.length > 1) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return email.substring(0, 2).toUpperCase();
+  }
+
+  Future<void> _updateProject() async {
+    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+    await _db.child('members/$sanitizedEmail/projects/${widget.projectId}').update({
+      'name': _titleController.text,
+      'description': _descriptionController.text
+    });
+    setState(() => _isEditing = false);
   }
 
   @override

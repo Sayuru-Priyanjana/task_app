@@ -57,6 +57,36 @@ void initState() {
   });
 }
 
+Future<void> _deleteProject() async {
+  final shouldDelete = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Delete Project'),
+      content: Text('Are you sure you want to delete this project and all its tasks?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (shouldDelete != true) return;
+
+  final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+  await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/tasks/${widget.taskId}').remove();
+  
+  Navigator.pop(context); // Go back to previous screen
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('Task deleted')),
+  );
+}
+
 Future<void> _loadCurrentUser() async {
   try {
     final prefs = await SharedPreferences.getInstance();
@@ -231,6 +261,10 @@ Future<void> _loadCurrentUser() async {
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [
+            IconButton(
+      icon: Icon(Icons.delete, color: Colors.red[300]),
+      onPressed: _deleteProject,
+    ),
           IconButton(
             icon: const Icon(Icons.save),
             onPressed: _saveTask,

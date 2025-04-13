@@ -1,19 +1,76 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class Budget extends StatelessWidget {
+class Budget extends StatefulWidget {
+  @override
+  _BudgetState createState() => _BudgetState();
+}
+
+class _BudgetState extends State<Budget> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  String? _userEmail;
+  Map<String, dynamic> _budgetData = {
+    'totalEarnings': 0.0,
+    'totalSpendings': 0.0,
+    'targetBudget': 0.0,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+ Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userEmail = prefs.getString('user_email');
+    });
+    
+    if (_userEmail != null) {
+      final userPath = _userEmail!.replaceAll('.', ',');
+      _db.child('members/$userPath/budget').onValue.listen((event) {
+        final snapshotValue = event.snapshot.value;
+        
+        setState(() {
+          _budgetData = {
+            'totalEarnings': _parseFirebaseValue((snapshotValue as Map?)?['totalEarnings']),
+            'totalSpendings': _parseFirebaseValue((snapshotValue as Map?)?['totalSpendings']),
+            'targetBudget': _parseFirebaseValue((snapshotValue as Map?)?['targetBudget']),
+          };
+        });
+      });
+    }
+  }
+
+  double _parseFirebaseValue(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
+  double get _targetPercentage {
+    final earnings = _getDoubleValue('totalEarnings');
+    final spendings = _getDoubleValue('totalSpendings');
+    
+    if (earnings <= 0) return 0.0;
+    return (spendings / earnings) * 100;
+  }
+
+  double _getDoubleValue(String key) {
+    final value = _budgetData[key];
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-      ),
-    );
-
     return Scaffold(
       backgroundColor: Color.lerp(Colors.white, Color(0xFF7C46F0), 0.15)!,
-      appBar: null,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -29,7 +86,6 @@ class Budget extends StatelessWidget {
                 Text(
                   "Budget Tracking",
                   style: TextStyle(
-                    fontFamily: 'Lexend Deca',
                     fontWeight: FontWeight.w600,
                     fontSize: 24,
                   ),
@@ -38,35 +94,35 @@ class Budget extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _buildBudgetCard(
-              context: context,
               title: "Total Earnings",
-              amount: "\$50000.00",
+              amount: "\$${_budgetData['totalEarnings']?.toStringAsFixed(2) ?? '0.00'}",
               icon: Icons.attach_money,
               cardColor: Colors.green,
               iconColor: Colors.greenAccent,
+              fieldPath: 'totalEarnings',
             ),
             SizedBox(height: 16),
             _buildBudgetCard(
-              context: context,
               title: "Total Spendings",
-              amount: "\$45000.00",
+              amount: "\$${_budgetData['totalSpendings']?.toStringAsFixed(2) ?? '0.00'}",
               icon: Icons.money_off,
-              cardColor: const Color.fromARGB(255, 246, 90, 79),
-              iconColor: const Color.fromARGB(255, 246, 19, 3),
+              cardColor: Color.fromARGB(255, 246, 90, 79),
+              iconColor: Color.fromARGB(255, 246, 19, 3),
+              fieldPath: 'totalSpendings',
             ),
             SizedBox(height: 16),
             _buildBudgetCard(
-              context: context,
               title: "Target Budget",
-              amount: "\$200,000",
+              amount: "\$${_budgetData['targetBudget']?.toStringAsFixed(2) ?? '0.00'}",
               icon: Icons.flag,
               cardColor: Color(0xFF7700FF).withOpacity(0.21),
               iconColor: Colors.purple,
+              fieldPath: 'targetBudget',
             ),
             SizedBox(height: 16),
             _buildProgressCard(
               title: "Target Percentage",
-              percentage: 75,
+              percentage: _targetPercentage,
               cardColor: Colors.white,
               progressColor: Colors.orange,
             ),
@@ -77,15 +133,14 @@ class Budget extends StatelessWidget {
   }
 
   Widget _buildBudgetCard({
-    required BuildContext context,
     required String title,
     required String amount,
     required IconData icon,
     required Color cardColor,
     required Color iconColor,
+    required String fieldPath,
   }) {
     return Container(
-      width: 2000,
       height: 140,
       child: Stack(
         children: [
@@ -108,7 +163,6 @@ class Budget extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          fontFamily: 'Poppins',
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.black,
@@ -134,9 +188,7 @@ class Budget extends StatelessWidget {
             right: 8,
             child: IconButton(
               icon: Icon(Icons.edit, color: Colors.black54),
-              onPressed: () {
-                _showEditDialog(context, title, amount);
-              },
+              onPressed: () => _showEditDialog(context, title, fieldPath),
             ),
           ),
         ],
@@ -146,7 +198,7 @@ class Budget extends StatelessWidget {
 
   Widget _buildProgressCard({
     required String title,
-    required int percentage,
+    required double percentage,
     required Color cardColor,
     required Color progressColor,
   }) {
@@ -164,7 +216,6 @@ class Budget extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                fontFamily: 'Poppins',
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
@@ -180,7 +231,7 @@ class Budget extends StatelessWidget {
             ),
             SizedBox(height: 8),
             Text(
-              "$percentage%",
+              "${percentage.toStringAsFixed(1)}%",
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -193,10 +244,10 @@ class Budget extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(
-      BuildContext context, String title, String currentValue) {
-    TextEditingController controller =
-        TextEditingController(text: currentValue);
+  void _showEditDialog(BuildContext context, String title, String fieldPath) {
+    TextEditingController controller = TextEditingController(
+      text: _budgetData[fieldPath]?.toString() ?? '0.00'
+    );
 
     showDialog(
       context: context,
@@ -205,6 +256,7 @@ class Budget extends StatelessWidget {
           title: Text("Edit $title"),
           content: TextField(
             controller: controller,
+            keyboardType: TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               hintText: "Enter new value",
               border: OutlineInputBorder(),
@@ -213,14 +265,17 @@ class Budget extends StatelessWidget {
           actions: [
             TextButton(
               child: Text("Cancel"),
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.pop(context),
             ),
             TextButton(
               child: Text("Save"),
               onPressed: () {
-                // Here you would typically save the new value
-                print("New value for $title: ${controller.text}");
-                Navigator.of(context).pop();
+                final value = double.tryParse(controller.text) ?? 0.0;
+                if (_userEmail != null) {
+                  _db.child('members/${_userEmail!.replaceAll('.', ',')}/budget/$fieldPath')
+                      .set(value);
+                }
+                Navigator.pop(context);
               },
             ),
           ],
@@ -228,11 +283,4 @@ class Budget extends StatelessWidget {
       },
     );
   }
-}
-
-void main() {
-  runApp(MaterialApp(
-    home: Budget(),
-    debugShowCheckedModeBanner: false,
-  ));
 }
