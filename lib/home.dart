@@ -28,7 +28,37 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadUserData();
+    fetchAndSaveIp(); // Fetch and save IP when the app starts
   }
+
+
+  // Fetch IP from Firebase and save to SharedPreferences
+Future<void> fetchAndSaveIp() async {
+  try {
+    // 1. Get IP from Firebase Realtime Database
+    final databaseRef = FirebaseDatabase.instance.ref("ip");
+    final snapshot = await databaseRef.get();
+
+    if (snapshot.exists) {
+      final ip = snapshot.value.toString();
+
+      // 2. Save IP to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ip', ip);
+      print("IP saved: $ip");
+    } else {
+      print("IP not found in Firebase");
+    }
+  } catch (e) {
+    print("Error fetching IP: $e");
+  }
+}
+
+// Retrieve saved IP from SharedPreferences
+Future<String?> getSavedIp() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('ip'); // Returns null if not set
+}
 
   Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
