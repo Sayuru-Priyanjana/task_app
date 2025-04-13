@@ -11,6 +11,7 @@ import 'events.dart';
 import 'detail.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'catogery_projects.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -375,18 +376,69 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildTaskGroups(BuildContext context) {
-    return Column(
-      children: [
-        _buildTaskGroup("Office Project", 23, 0.25, Colors.pink, context,
-            OfficeProjectsScreen()),
-        _buildTaskGroup("Personal Project", 30, 0.60, Colors.deepPurpleAccent,
-            context, Personalprojectscreen()),
-        _buildTaskGroup(
-            "Events", 30, 0.45, Colors.orange, context, EventsScreen()),
-      ],
-    );
+Widget _buildTaskGroups(BuildContext context) {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  String? currentUserEmail;
+
+  return FutureBuilder(
+    future: SharedPreferences.getInstance(),
+    builder: (context, snapshot) {
+      if (snapshot.hasData) {
+  final prefs = snapshot.data as SharedPreferences;
+  final currentUserEmail = prefs.getString('user_email');
+
+  if (currentUserEmail == null) {
+    return Center(child: Text("User not logged in"));
   }
+
+  final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
+
+        
+        return StreamBuilder(
+          stream: _db.child('members/$sanitizedEmail/projects').onValue,
+          builder: (context, projectSnapshot) {
+            if (projectSnapshot.hasError) {
+              return Center(child: Text("Error loading categories"));
+            }
+
+            if (projectSnapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            if (!projectSnapshot.hasData || projectSnapshot.data!.snapshot.value == null) {
+              return Center(child: Text("No categories found"));
+            }
+
+            final projectsMap = projectSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+            Map<String, int> categoryCounts = {};
+
+            projectsMap.forEach((_, project) {
+              final category = project['catogory'] ?? 'Uncategorized';
+              categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+            });
+
+            return Column(
+              children: categoryCounts.entries.map((entry) {
+                final category = entry.key;
+                final count = entry.value;
+                
+                return _buildTaskGroup(
+                  category,
+                  count,
+                  0.5, // Replace with actual progress calculation
+                  _getCategoryColor(category),
+                  context,
+                  CategoryProjectsScreen(category: category),
+                );
+              }).toList(),
+            );
+          },
+        );
+      }
+      return Center(child: CircularProgressIndicator());
+    },
+  );
+}
 
   Widget _buildCard(String title, IconData icon, VoidCallback onTap,
       {double? width, bool isCentered = false}) {
