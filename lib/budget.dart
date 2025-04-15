@@ -52,13 +52,14 @@ class _BudgetState extends State<Budget> {
     return 0.0;
   }
 
-  double get _targetPercentage {
-    final earnings = _getDoubleValue('totalEarnings');
-    final spendings = _getDoubleValue('totalSpendings');
-    
-    if (earnings <= 0) return 0.0;
-    return (spendings / earnings) * 100;
-  }
+double get _targetPercentage {
+  final earnings = _getDoubleValue('totalEarnings');
+  final targetBudget = _getDoubleValue('targetBudget');
+
+  if (targetBudget <= 0) return 0.0;
+  return (earnings / targetBudget) * 100;
+}
+
 
   double _getDoubleValue(String key) {
     final value = _budgetData[key];
