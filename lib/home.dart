@@ -9,9 +9,13 @@ import 'tasks.dart';
 import 'user.dart';
 import 'events.dart';
 import 'detail.dart';
+import 'auth/login.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'catogery_projects.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
 
 class HomePage extends StatefulWidget {
   @override
@@ -30,6 +34,31 @@ class _HomePageState extends State<HomePage> {
     _loadUserData();
     fetchAndSaveIp(); // Fetch and save IP when the app starts
   }
+
+
+// In your HomePage or Profile screen
+Future<void> _logout() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final googleSignIn = GoogleSignIn();
+    
+    // Sign out from all providers
+    await FirebaseAuth.instance.signOut();
+    await googleSignIn.signOut();
+    
+    // Clear local storage
+    await prefs.clear();
+    
+    // Navigate to login screen
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => LoginPage()),
+      (route) => false,
+    );
+  } catch (e) {
+    print('Logout error: $e');
+  }
+}
 
 
   // Fetch IP from Firebase and save to SharedPreferences
@@ -156,59 +185,125 @@ Future<String?> getSavedIp() async {
   }
 
   Widget _buildTaskProgressCard(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.deepPurple,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("Your today's task\nalmost done!",
-                  style: TextStyle(color: Colors.white, fontSize: 16)),
-              SizedBox(height: 10),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => TasksPage()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                ),
-                child: Text("View Task",
-                    style: TextStyle(color: Colors.deepPurple)),
-              ),
-            ],
-          ),
-          SizedBox(
-            width: 50,
-            height: 50,
-            child: Stack(
-              alignment: Alignment.center,
+ 
+  String? sanitizedEmail = userEmail?.replaceAll('.', ',');
+
+  DatabaseReference userRef = FirebaseDatabase.instance.ref('members/$sanitizedEmail');
+  print('[DEBUG] Firebase path: members/$sanitizedEmail');
+
+  return StreamBuilder<DatabaseEvent>(
+    stream: userRef.onValue,
+    builder: (context, snapshot) {
+      double progress = 0.0;
+      String progressText = "No pending tasks";
+      int percentage = 0;
+      int totalTasks = 0;
+      int completedTasks = 0;
+      final DateTime now = DateTime.now();
+
+      if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+        Map<dynamic, dynamic> userData = 
+            snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+
+        if (userData['projects'] != null) {
+          Map<dynamic, dynamic> projects = userData['projects'] as Map;
+          projects.forEach((projectId, projectData) {
+            final tasks = (projectData as Map)['tasks'] as Map? ?? {};
+            tasks.forEach((taskId, taskData) {
+              // Null-safe assignment check
+              final assignees = (taskData['assign_to'] as List?) ?? [];
+              if (assignees.contains(sanitizedEmail)) {
+                final dueDateStr = taskData['due_date']?.toString();
+                if (dueDateStr != null) {
+                  try {
+                    final dueDate = DateTime.parse(dueDateStr);
+                    final taskDueDate = DateTime(dueDate.year, dueDate.month, dueDate.day);
+                    final currentDate = DateTime(now.year, now.month, now.day);
+
+                    if (taskDueDate.isAfter(currentDate) || taskDueDate.isAtSameMomentAs(currentDate)) {
+                      totalTasks++;
+                      if ((taskData['status'] as bool?) ?? false) {
+                        completedTasks++;
+                      }
+                    }
+                  } catch (e) {
+                    print('Error parsing date: $e');
+                  }
+                }
+              }
+            });
+          });
+        }
+
+        if (totalTasks > 0) {
+          progress = completedTasks / totalTasks;
+          percentage = (progress * 100).round();
+          progressText = "$percentage%";
+        }
+      }
+
+      return Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircularProgressIndicator(
-                    value: 0.85,
-                    color: Colors.white,
-                    backgroundColor: Colors.white24),
-                Text("85%",
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
+                Text(
+                  totalTasks == 0 
+                    ? "No pending tasks!"
+                    : percentage == 100
+                      ? "All tasks completed!\nGreat job!"
+                      : "Complete ${totalTasks - completedTasks} tasks\nbefore deadline!",
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+                SizedBox(height: 10),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => TasksPage()),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                  ),
+                  child: Text("View Tasks",
+                      style: TextStyle(color: Colors.deepPurple)),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
+            SizedBox(
+              width: 50,
+              height: 50,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    value: progress,
+                    color: Colors.white,
+                    backgroundColor: Colors.white24,
+                  ),
+                  Text(progressText,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+ 
   Widget _buildSectionTitle(String title, int count) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -231,45 +326,79 @@ Future<String?> getSavedIp() async {
               ),
           ],
         ),
-        Text("$count", style: TextStyle(fontSize: 16, color: Colors.grey)),
+        
       ],
     );
   }
 
   void _addNewCategory(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String newCategory = "";
-        return AlertDialog(
-          title: Text("Add New Category"),
-          content: TextField(
-            decoration: InputDecoration(
-              hintText: "Enter category name",
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (value) => newCategory = value,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () {
-                if (newCategory.isNotEmpty) {
-                  print("New Category: $newCategory");
-                  Navigator.pop(context);
-                }
-              },
-              child: Text("Add"),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
+  String? sanitizedEmail = userEmail?.replaceAll('.', ',');
+  final memberRef = FirebaseDatabase.instance.ref('members/$sanitizedEmail/categories');
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      String newCategory = "";
+      return AlertDialog(
+        title: const Text("Add New Category"),
+        content: TextField(
+          decoration: const InputDecoration(
+            hintText: "Enter category name",
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (value) => newCategory = value.trim(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (newCategory.isNotEmpty) {
+                try {
+                  // Get current categories
+                  final snapshot = await memberRef.get();
+                  final currentCategories = snapshot.value as List? ?? [];
+
+                  // Check if category already exists
+                  if (currentCategories.contains(newCategory)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('"$newCategory" already exists')),
+                    );
+                    return;
+                  }
+
+                  // Add new category to the list
+                  await memberRef.set([...currentCategories, newCategory]);
+
+                  if (mounted) Navigator.pop(context);
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('"$newCategory" added successfully')),
+                  );
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.toString()}')),
+                    );
+                  }
+                }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please enter a category name')),
+                );
+              }
+            },
+            child: const Text("Add"),
+          ),
+        ],
+      );
+    },
+  );
+}
+  
   Widget _buildInProgressTasks() {
     final DatabaseReference _db = FirebaseDatabase.instance.ref();
     String? currentUserEmail;
@@ -406,70 +535,6 @@ Future<String?> getSavedIp() async {
     );
   }
 
-Widget _buildTaskGroups(BuildContext context) {
-  final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  String? currentUserEmail;
-
-  return FutureBuilder(
-    future: SharedPreferences.getInstance(),
-    builder: (context, snapshot) {
-      if (snapshot.hasData) {
-  final prefs = snapshot.data as SharedPreferences;
-  final currentUserEmail = prefs.getString('user_email');
-
-  if (currentUserEmail == null) {
-    return Center(child: Text("User not logged in"));
-  }
-
-  final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
-
-        
-        return StreamBuilder(
-          stream: _db.child('members/$sanitizedEmail/projects').onValue,
-          builder: (context, projectSnapshot) {
-            if (projectSnapshot.hasError) {
-              return Center(child: Text("Error loading categories"));
-            }
-
-            if (projectSnapshot.connectionState == ConnectionState.waiting) {
-              return Center(child: CircularProgressIndicator());
-            }
-
-            if (!projectSnapshot.hasData || projectSnapshot.data!.snapshot.value == null) {
-              return Center(child: Text("No categories found"));
-            }
-
-            final projectsMap = projectSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
-            Map<String, int> categoryCounts = {};
-
-            projectsMap.forEach((_, project) {
-              final category = project['catogory'] ?? 'Uncategorized';
-              categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
-            });
-
-            return Column(
-              children: categoryCounts.entries.map((entry) {
-                final category = entry.key;
-                final count = entry.value;
-                
-                return _buildTaskGroup(
-                  category,
-                  count,
-                  0.5, // Replace with actual progress calculation
-                  _getCategoryColor(category),
-                  context,
-                  CategoryProjectsScreen(category: category),
-                );
-              }).toList(),
-            );
-          },
-        );
-      }
-      return Center(child: CircularProgressIndicator());
-    },
-  );
-}
-
   Widget _buildCard(String title, IconData icon, VoidCallback onTap,
       {double? width, bool isCentered = false}) {
     return Container(
@@ -502,54 +567,157 @@ Widget _buildTaskGroups(BuildContext context) {
     );
   }
 
-  Widget _buildTaskGroup(String title, int tasks, double progress,
-      Color progressColor, BuildContext context, Widget? destination) {
-    return GestureDetector(
-      onTap: () {
-        if (destination != null) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => destination),
-          );
+  Widget _buildTaskGroups(BuildContext context) {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  
+  return FutureBuilder(
+    future: SharedPreferences.getInstance(),
+    builder: (context, snapshot) {
+      if (snapshot.hasData) {
+        final prefs = snapshot.data as SharedPreferences;
+        final currentUserEmail = prefs.getString('user_email');
+
+        if (currentUserEmail == null) {
+          return Center(child: Text("User not logged in"));
         }
-      },
-      child: Container(
-        margin: EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                spreadRadius: 2,
-                blurRadius: 4,
-                offset: Offset(0, 2))
-          ],
-        ),
-        child: ListTile(
-          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          title: Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text("$tasks Tasks", style: TextStyle(color: Colors.grey)),
-          trailing: SizedBox(
-            width: 40,
-            height: 40,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CircularProgressIndicator(
-                    value: progress,
-                    color: progressColor,
-                    backgroundColor: Colors.grey[300]),
-                Text("${(progress * 100).toInt()}%",
-                    style: TextStyle(
-                        color: progressColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
-              ],
-            ),
+
+        final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
+        
+        return StreamBuilder(
+          stream: _db.child('members/$sanitizedEmail').onValue,
+          builder: (context, userSnapshot) {
+            if (userSnapshot.hasError) {
+              return Center(child: Text("Error loading categories"));
+            }
+
+            if (userSnapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            if (!userSnapshot.hasData || userSnapshot.data!.snapshot.value == null) {
+              return Center(child: Text("No categories found"));
+            }
+
+            final userData = userSnapshot.data!.snapshot.value as Map<dynamic, dynamic>;
+            
+            // Get categories list from the categories node
+            final categories = (userData['categories'] as List?)?.cast<String>() ?? [];
+            
+            // Get projects data to calculate task counts
+            final projectsMap = userData['projects'] as Map<dynamic, dynamic>? ?? {};
+            
+            // Calculate task counts per category
+            Map<String, int> taskCounts = {};
+            Map<String, int> completedCounts = {};
+            
+            projectsMap.forEach((_, project) {
+              final category = project['catogory']?.toString() ?? 'Uncategorized';
+              final tasks = project['tasks'] as Map<dynamic, dynamic>? ?? {};
+              
+              taskCounts[category] = (taskCounts[category] ?? 0) + tasks.length;
+              
+              tasks.forEach((_, task) {
+                if ((task['status'] as bool?) ?? false) {
+                  completedCounts[category] = (completedCounts[category] ?? 0) + 1;
+                }
+              });
+            });
+            
+            // Combine both user categories and project categories
+            final allCategories = {
+              ...categories,
+              ...taskCounts.keys.where((c) => !categories.contains(c))
+            }.toList();
+            
+            if (allCategories.isEmpty) {
+              return Center(child: Text("No categories available"));
+            }
+
+            return Column(
+              children: allCategories.map((category) {
+                final totalTasks = taskCounts[category] ?? 0;
+                final completedTasks = completedCounts[category] ?? 0;
+                final progress = totalTasks > 0 ? completedTasks / totalTasks : 0.0;
+                
+                return _buildTaskGroup(
+                  category,
+                  totalTasks,
+                  progress,
+                  _getCategoryColor(category),
+                  context,
+                  () async { // Changed to callback function
+                    // Store selected category in SharedPreferences
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString('selected_catogery', category);
+                    
+                    // Navigate to category screen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CategoryProjectsScreen(category: category),
+                      ),
+                    );
+                  },
+                );
+              }).toList(),
+            );
+          },
+        );
+      }
+      return Center(child: CircularProgressIndicator());
+    },
+  );
+}
+
+  Widget _buildTaskGroup(
+  String title, 
+  int tasks, 
+  double progress,
+  Color progressColor, 
+  BuildContext context, 
+  VoidCallback? onTap, // Changed to VoidCallback
+) {
+  return GestureDetector(
+    onTap: onTap, // Use the provided callback
+    child: Container(
+      margin: EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 2,
+            blurRadius: 4,
+            offset: Offset(0, 2))
+        ],
+      ),
+      child: ListTile(
+        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("$tasks Tasks", style: TextStyle(color: Colors.grey)),
+        trailing: SizedBox(
+          width: 40,
+          height: 40,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: progress,
+                color: progressColor,
+                backgroundColor: Colors.grey[300]),
+              Text("${(progress * 100).toInt()}%",
+                style: TextStyle(
+                  color: progressColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold)),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+
 }

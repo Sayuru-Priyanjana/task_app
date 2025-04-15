@@ -4,11 +4,16 @@ import 'dart:convert';
 import 'package:multicast_dns/multicast_dns.dart';
 import 'dnsDiscovery.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 
 
+class InsightsPage extends StatefulWidget {
+  @override
+  _InsightsPageState createState() => _InsightsPageState();
+}
 
-class InsightsPage extends StatelessWidget {
+class _InsightsPageState extends State<InsightsPage> {
 
 Future<List<LeaderboardEntry>> fetchLeaderboard() async {
   // Get IP from SharedPreferences
@@ -33,6 +38,154 @@ Future<List<LeaderboardEntry>> fetchLeaderboard() async {
     throw Exception('Failed to load leaderboard: ${response.statusCode}');
   }
 }
+
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+  Map<DateTime, int> _heatmapData = {};
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHeatmapData();
+  }
+
+Future<void> _loadHeatmapData() async {
+    print('🔥 Starting heatmap data load');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? userEmail = prefs.getString('user_email');
+
+      if (userEmail == null) {
+        print('🚫 No user email found');
+        setState(() {
+          _errorMessage = 'User not logged in';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final sanitizedEmail = userEmail.replaceAll('.', ',');
+      print('📧 Sanitized email: $sanitizedEmail');
+
+      final snapshot = await _dbRef.child('members/$sanitizedEmail/projects').get();
+      print('📦 Firebase snapshot exists: ${snapshot.exists}');
+
+      final Map<DateTime, int> newData = {};
+      int taskCount = 0;
+
+      if (snapshot.exists) {
+        final projects = snapshot.value as Map<dynamic, dynamic>;
+
+        projects.forEach((projectId, projectData) {
+          final tasks = (projectData as Map)['tasks'] as Map<dynamic, dynamic>?;
+
+          tasks?.forEach((taskId, taskData) {
+            try {
+              final status = taskData['status'] ?? false;
+              final completedDateStr = taskData['completed_date'];
+              final priority = taskData['priority'] ?? 3;
+
+              if (status == true && completedDateStr != null) {
+                final completedDate = DateTime.parse(completedDateStr.toString());
+                final dateKey = DateTime(completedDate.year, completedDate.month, completedDate.day);
+
+                if (!newData.containsKey(dateKey) || priority < newData[dateKey]!) {
+                  newData[dateKey] = priority;
+                }
+                taskCount++;
+              }
+            } catch (e) {
+              print('❌ Error processing task $taskId: $e');
+            }
+          });
+        });
+      }
+
+      print('📊 Tasks counted: $taskCount');
+      print('🧩 Raw newData keys: ${newData.keys.toList()}');
+
+      setState(() {
+        _heatmapData = newData;
+        _isLoading = false;
+        _errorMessage = null;
+      });
+
+      print('📊 Heatmap data loaded: $_heatmapData');
+
+    } catch (e) {
+      print('‼️ Critical error: $e');
+      setState(() {
+        _errorMessage = 'Failed to load activity data';
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<DateTime> _generateLast35Days() {
+    final today = DateTime.now();
+    return List.generate(35, (i) {
+      final date = today.subtract(Duration(days: 34 - i));
+      return DateTime(date.year, date.month, date.day);
+    });
+  }
+
+  Widget _buildHeatMap() {
+    List<Color> colors = [
+      Colors.black,
+      Colors.teal,
+      Colors.lightBlueAccent,
+      Colors.deepPurpleAccent
+    ];
+
+    List<String> months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+    ];
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(11, (index) {
+            return Text(
+              months[index],
+              style: TextStyle(color: Colors.white70, fontSize: 10),
+            );
+          }),
+        ),
+        SizedBox(height: 5),
+        Column(
+          children: List.generate(6, (row) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: List.generate(11, (col) {
+                return Container(
+                  margin: EdgeInsets.all(2),
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: colors[(row + col) % colors.length],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }),
+            );
+          }),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,23 +246,8 @@ Future<List<LeaderboardEntry>> fetchLeaderboard() async {
     );
   }
 
-  Widget _buildHeatMap() {
-    // Implement your actual heatmap logic here
-    return Container(
-      height: 120,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.black.withOpacity(0.1),
-      ),
-      child: Center(
-        child: Text(
-          "Heatmap Placeholder",
-          style: TextStyle(color: Colors.white.withOpacity(0.5)),
-        ),
-      ),
-    );
-  }
 
+  
   Widget _buildColorLegend() {
     return Row(
       children: [

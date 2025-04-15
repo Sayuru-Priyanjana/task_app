@@ -19,6 +19,7 @@ class DetailPage extends StatefulWidget {
 }
 
 class _DetailPageState extends State<DetailPage> {
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
@@ -177,53 +178,108 @@ class _DetailPageState extends State<DetailPage> {
   }
 
 Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
+  // Local state update
   setState(() {
     if (_tasks.containsKey(taskId)) {
       _tasks[taskId]['status'] = newStatus;
     }
   });
 
-  final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
-  final taskRef = _db.child('members/$sanitizedEmail/projects/${widget.projectId}/tasks/$taskId');
+  // Database reference setup
+  final sanitizedCurrentEmail = _currentUserEmail.replaceAll('.', ',');
+  final taskRef = _db.child(
+    'members/$sanitizedCurrentEmail/projects/${widget.projectId}/tasks/$taskId'
+  );
 
-  // Update status
-  await taskRef.child('status').set(newStatus);
+  final projectRef = _db.child(
+    'members/$sanitizedCurrentEmail/projects/${widget.projectId}'
+  );
 
-  // Update completed_date
+
+  // Update task status
+  await taskRef.update({'status': newStatus});
+
+  // Handle completion logic
   if (newStatus) {
     final now = DateTime.now();
     final formattedDate = DateFormat('yyyy-MM-dd').format(now);
-    await taskRef.child('completed_date').set(formattedDate);
+    await taskRef.update({'completed_date': formattedDate});
+
+    final projectSnapshot = await projectRef.get();
+    if (projectSnapshot.exists) {
+      final projectData = Map<dynamic, dynamic>.from(projectSnapshot.value as Map);
+      
+    }
+
+    final taskSnapshot = await taskRef.get();
+    if (taskSnapshot.exists) {
+      final taskData = Map<dynamic, dynamic>.from(taskSnapshot.value as Map);
+      final complextivity = taskData['complextivity'] as int? ?? 1;
+      final points = complextivity * 5;
+      final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+      final taskName = taskData['name']?.toString() ?? 'Unnamed Task';
+
+      // Notification payload
+      final notification = {
+        'type': 'task_completed',
+        'taskId': taskId,
+        'taskName': taskName,
+        'projectId': widget.projectId,
+        'projectName': widget.projectId, // Replace with actual project name if available
+        'completedBy': _currentUserEmail,
+        'completedDate': formattedDate,
+        'pointsEarned': points,
+        'timestamp': ServerValue.timestamp,
+        'read': false,
+      };
+
+      // Update all assigned members
+      for (final rawEmail in assignTo) {
+        final sanitizedEmail = rawEmail.replaceAll('.', ',');
+        final memberRef = _db.child('members/$sanitizedEmail');
+        
+        // Update points
+        final memberSnapshot = await memberRef.get();
+        if (memberSnapshot.exists) {
+          final currentPoints = memberSnapshot.child('points').value as int? ?? 0;
+          await memberRef.update({'points': currentPoints + points});
+          
+          // Add notification
+          await memberRef.child('notifications').push().set(notification);
+        }
+      }
+    }
   } else {
+    // Handle task un-completion
     await taskRef.child('completed_date').remove();
-  }
 
-  final taskSnapshot = await taskRef.get();
-  if (taskSnapshot.exists) {
-    final taskData = taskSnapshot.value as Map<dynamic, dynamic>;
-    final complextivity = taskData['complextivity'] ?? 1;
-    final pointsToAdd = complextivity * 5 * (newStatus ? 1 : -1);
-    final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+    final taskSnapshot = await taskRef.get();
+    if (taskSnapshot.exists) {
+      final taskData = Map<dynamic, dynamic>.from(taskSnapshot.value as Map);
+      final complextivity = taskData['complextivity'] as int? ?? 1;
+      final points = complextivity * 5;
+      final assignTo = List<String>.from(taskData['assign_to'] ?? []);
 
-    for (final memberEmail in assignTo) {
-      final sanitizedMemberEmail = memberEmail.replaceAll('.', ',');
-      final memberRef = _db.child('members/$sanitizedMemberEmail');
-      final memberSnapshot = await memberRef.get();
-      if (memberSnapshot.exists) {
-        final currentPoints = memberSnapshot.child('points').value as int? ?? 0;
-        await memberRef.update({'points': currentPoints + pointsToAdd});
+      for (final rawEmail in assignTo) {
+        final sanitizedEmail = rawEmail.replaceAll('.', ',');
+        final memberRef = _db.child('members/$sanitizedEmail');
+        
+        final memberSnapshot = await memberRef.get();
+        if (memberSnapshot.exists) {
+          final currentPoints = memberSnapshot.child('points').value as int? ?? 0;
+          await memberRef.update({'points': currentPoints - points});
+        }
       }
     }
   }
 
+  // Refresh task list
   if (_sortByPriority) {
     await _sortTasksByPriority();
   } else {
     _sortTasksLocally();
   }
 }
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -242,7 +298,7 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
     ),
     IconButton(
       icon: Icon(Icons.chat, color: Colors.black),
-      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Chat())),
+      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => CommonChatScreen())),
     ),
   ],
 ),
@@ -396,55 +452,79 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
   }
 
   Widget _buildAssignedSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text("Assigned to", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            IconButton(
-  icon: Icon(Icons.add),
-  onPressed: () async {
-    final selected = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AddProjectMembers(
-          projectId: widget.projectId,
-          currentUserEmail: _currentUserEmail,
-          existingMembers: _assignedMembers,
-        ),
-      ),
-    );
-    
-    if (selected != null) {
-      // Convert dynamic list to List<String>
-      final updatedMembers = List<String>.from(
-        [..._assignedMembers, ...selected]
-      ).toSet().toList();
-      
-      final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
-      await _db.child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
-        .set(updatedMembers);
-      
-      setState(() => _assignedMembers = updatedMembers);
-    }
-  },
-),
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            "Assigned to",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          GestureDetector(
+            onTap: () async {
+              final selected = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AddProjectMembers(
+                    projectId: widget.projectId,
+                    currentUserEmail: _currentUserEmail,
+                    existingMembers: _assignedMembers,
+                  ),
+                ),
+              );
 
-          ],
-        ),
-        SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: _assignedMembers.map((email) => CircleAvatar(
+              if (selected != null) {
+                final updatedMembers = List<String>.from(
+                  [..._assignedMembers, ...selected],
+                ).toSet().toList();
+
+                final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+                await _db
+                    .child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
+                    .set(updatedMembers);
+
+                setState(() => _assignedMembers = updatedMembers);
+              }
+            },
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.transparent,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.black,
+                    width: 2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.add,
+                  color: Colors.deepPurple,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        children: _assignedMembers.map((email) {
+          return CircleAvatar(
             backgroundColor: _getAvatarColor(email),
-            child: Text(_getInitials(email), style: TextStyle(color: Colors.white)),
-          )).toList(),
-        ),
-      ],
-    );
-  }
+            child: Text(
+              _getInitials(email),
+              style: TextStyle(color: Colors.white),
+            ),
+          );
+        }).toList(),
+      ),
+    ],
+  );
+}
 
   Widget _buildTaskSection() {
     return Column(
@@ -454,15 +534,33 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text("Tasks", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            IconButton(
-              icon: Icon(Icons.add),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => Createtaskpage(projectId: widget.projectId),
-                ),
-              ),
-            ),
+            GestureDetector(
+  onTap: () => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => Createtaskpage(projectId: widget.projectId),
+    ),
+  ),
+  child: CircleAvatar(
+    radius: 20,
+    backgroundColor: Colors.transparent,
+    child: Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.black,
+          width: 2,
+        ),
+      ),
+      child: Icon(
+        Icons.add,
+        color: Colors.deepPurple,
+        size: 20,
+      ),
+    ),
+  ),
+),
+
           ],
         ),
         if (_isLoadingTasks)
@@ -479,101 +577,122 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
   }
 
   Widget _buildTaskItem(String taskId, dynamic taskData) {
-    final name = taskData['name'] ?? 'Unnamed Task';
-    final description = taskData['description'] ?? '';
-    final status = taskData['status'] ?? false;
-    final complextivity = taskData['complextivity'] ?? 1;
-    final dueDate = taskData['due_date'] ?? '';
-    final assignTo = List<String>.from(taskData['assign_to'] ?? []);
-    final completed_date = taskData['completed_date'] ?? '';
+  final name = taskData['name'] ?? 'Unnamed Task';
+  final description = taskData['description'] ?? '';
+  final status = taskData['status'] ?? false;
+  final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+  final remainingHours = _calculateRemainingHours(taskData['due_date']);
 
-    return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => TaskDetailPage(
-            projectId: widget.projectId,
-            taskId: taskId,
-          ),
+  return InkWell(
+    onTap: () => Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TaskDetailPage(
+          projectId: widget.projectId,
+          taskId: taskId,
         ),
       ),
-      child: Column(
-        children: [
-          ListTile(
-            leading: Checkbox(
-              value: status,
-              onChanged: (value) => _toggleTaskStatus(taskId, value ?? false),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          leading: GestureDetector(
+            onTap: () async {
+              // Toggle task status
+              final newStatus = !status;
+              await _toggleTaskStatus(taskId, newStatus);
+            },
+            behavior: HitTestBehavior.opaque, // Makes entire area tappable
+            child: Icon(
+              status ? Icons.check_circle : Icons.radio_button_unchecked,
+              color: status ? Colors.blue : Colors.grey,
+              size: 24,
             ),
-            title: Text(name, style: TextStyle(fontSize: 16)),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (description.isNotEmpty) Text(description),
-                SizedBox(height: 4),
-                Row(
-                  children: [
-                    Image.asset('assets/Flag.png', width: 10, height: 10),
-                    SizedBox(width: 8),
-                    Text("${complextivity * 5} pts"),
-                    if (dueDate.isNotEmpty) ...[
-                      SizedBox(width: 16),
-                      Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                      SizedBox(width: 8),
-                      Text(_formatDate(dueDate)),
-                    ],
-                  ],
+          ),
+          title: Text(
+            name,
+            style: TextStyle(
+              fontSize: 16,
+              decoration: status ? TextDecoration.lineThrough : null,
+            ),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (description.isNotEmpty) 
+                Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    description,
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ),
-              ],
-            ),
-            trailing: SizedBox(
-              width: 70,
-              height: 40,
-              child: Stack(
-                children: List.generate(assignTo.length, (index) {
-                  if (index < 3) {
-                    return Positioned(
-                      left: index * 15,
-                      child: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: _getAvatarColor(assignTo[index]),
-                        child: Text(
-                          _getInitials(assignTo[index]),
-                          style: TextStyle(color: Colors.white),
-                        ),
+              Text("$remainingHours hr"),
+            ],
+          ),
+          trailing: SizedBox(
+            width: 70,
+            height: 40,
+            child: Stack(
+              children: List.generate(assignTo.length, (index) {
+                if (index < 3) {
+                  return Positioned(
+                    left: index * 15,
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: _getAvatarColor(assignTo[index]),
+                      child: Text(
+                        _getInitials(assignTo[index]),
+                        style: TextStyle(color: Colors.white, fontSize: 10),
                       ),
-                    );
-                  } else if (index == 3) {
-                    return Positioned(
-                      left: 3 * 15,
-                      child: CircleAvatar(
-                        radius: 14,
-                        backgroundColor: Colors.grey[300],
-                        child: Text(
-                          '+${assignTo.length - 3}',
-                          style: TextStyle(color: Colors.white, fontSize: 10),
-                        ),
+                    ),
+                  );
+                } else if (index == 3) {
+                  return Positioned(
+                    left: 3 * 15,
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Colors.grey[300],
+                      child: Text(
+                        '+${assignTo.length - 3}',
+                        style: TextStyle(color: Colors.white, fontSize: 10),
                       ),
-                    );
-                  }
-                  return Container();
-                }),
-              ),
+                    ),
+                  );
+                }
+                return Container();
+              }),
             ),
           ),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10),
-            child: LinearProgressIndicator(
-              value: status ? 1 : 0.4,
-              backgroundColor: Colors.purple[100],
-              color: Colors.purple,
-            ),
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: LinearProgressIndicator(
+            value: status ? 1 : 0.4,
+            backgroundColor: Colors.purple[100],
+            color: Colors.purple,
+            minHeight: 2,
           ),
-          SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
+        ),
+        SizedBox(height: 8),
+      ],
+    ),
+  );
+}
 
+  int _calculateRemainingHours(String? dueDate) {
+  if (dueDate == null || dueDate.isEmpty) return 0;
+  try {
+    final deadline = DateTime.parse(dueDate);
+    final now = DateTime.now();
+    final difference = deadline.difference(now);
+    return difference.inHours;
+  } catch (e) {
+    return 0;
+  }
+}
+  
   Color _getAvatarColor(String email) {
     final colors = [Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.red];
     return colors[email.hashCode % colors.length];

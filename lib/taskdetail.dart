@@ -14,6 +14,7 @@ class TaskDetailPage extends StatefulWidget {
 }
 
 class _TaskDetailPageState extends State<TaskDetailPage> {
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
@@ -325,7 +326,7 @@ Future<void> _loadCurrentUser() async {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    "Lv. $_complexity",
+                    "${priorityLabels[_complexity]}",
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

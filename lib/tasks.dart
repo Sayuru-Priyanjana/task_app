@@ -108,7 +108,7 @@ class _TasksPageState extends State<TasksPage> {
       bool matchesDate = task["date"] == selectedDate;
       bool matchesFilter = selectedFilter == "All" || 
                          (selectedFilter == "Done" && task["status"] == true) ||
-                         (selectedFilter == "In Progress" && task["status"] == false);
+                         (selectedFilter == "Todo" && task["status"] == false);
       return matchesDate && matchesFilter;
     }).toList();
   }
@@ -164,7 +164,7 @@ class _TasksPageState extends State<TasksPage> {
             icon: Icon(Icons.notifications, color: Colors.black),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => NotificationsPage()),
+              MaterialPageRoute(builder: (context) => NotificationsPage(currentUserEmail: _currentUserEmail,)),
             ),
           ),
           SizedBox(width: 16),
@@ -254,29 +254,30 @@ class _TasksPageState extends State<TasksPage> {
     );
   }
 
-  Widget _buildFilterButtons() {
-    List<String> filters = ["All", "In Progress", "Done"];
-    
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: filters.map((filter) {
-          bool isSelected = filter == selectedFilter;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  selectedFilter = filter;
-                });
-              },
-              child: Container(
-                padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: isSelected ? customPurple : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: customPurple),
-                ),
+Widget _buildFilterButtons() {
+  List<String> filters = ["All", "Todo", "Done"];
+
+  return Row(
+    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    children: filters.map((filter) {
+      bool isSelected = filter == selectedFilter;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                selectedFilter = filter;
+              });
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: isSelected ? customPurple : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: customPurple),
+              ),
+              child: Center(
                 child: Text(
                   filter,
                   style: TextStyle(
@@ -286,11 +287,13 @@ class _TasksPageState extends State<TasksPage> {
                 ),
               ),
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
+          ),
+        ),
+      );
+    }).toList(),
+  );
+}
+
 
   Widget _buildTaskCard(
       String category, String title, String time, String status, Color color) {
