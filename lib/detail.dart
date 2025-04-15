@@ -9,6 +9,8 @@ import 'createtask.dart';
 import 'taskdetail.dart';
 import 'update_project_member.dart';
 import 'package:intl/intl.dart';
+import 'feedback.dart';
+import 'database.dart';
 
 class DetailPage extends StatefulWidget {
   final String projectId;
@@ -32,6 +34,7 @@ class _DetailPageState extends State<DetailPage> {
   bool _isLoadingTasks = false;
   String _flaskServerUrl = 'http://127.0.0.1:5000';
   bool _sortByPriority = true;
+  
 
   @override
   void initState() {
@@ -314,16 +317,27 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
             _buildWhiteCard(_buildTaskSection()),
             SizedBox(height: 30),
             Center(
-              child: ElevatedButton.icon(
-                label: Text("Feedback", style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () {},
-              ),
-            ),
+  child: ElevatedButton.icon(
+    label: Text("Feedback", style: TextStyle(color: Colors.white)),
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Colors.deepPurple,
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    onPressed: () {
+
+
+      // Navigate to the feedback page and pass the projectId and userEmail
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FeedbackDatabaseScreen(memberId: _currentUserEmail.replaceAll('.', ','), projectId: widget.projectId,),
+        ),
+      );
+    },
+  ),
+),
+
           ],
         ),
       ),
