@@ -360,7 +360,7 @@ Future<void> _loadHeatmapData() async {
       children: [
         _scoreLegendItem("SCORE", isHeader: true),
         _scoreLegendItem("TASKS"),
-        _scoreLegendItem("ON TIME"),
+        
       ],
     );
   }
@@ -426,8 +426,8 @@ Future<void> _loadHeatmapData() async {
           _buildMetricColumn("${entry.scorePercentage}%", 
               Color(0xFF7C46F0)),
           _buildMetricColumn("${entry.totalTasks}", Colors.grey[600]!),
-          _buildMetricColumn("${(entry.onTimeRate * 100).toStringAsFixed(1)}%", 
-              Colors.green),
+        
+               
         ],
       ),
     );
