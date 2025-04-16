@@ -597,24 +597,28 @@ class _WorkSectionState extends State<WorkSection> {
     );
   }
 
-  Widget _buildStatBox(String value, String label) {
-    return Expanded(
-      child: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Text(label, style: TextStyle(fontSize: 14, color: Colors.grey)),
-          ],
-        ),
+Widget _buildStatBox(String value, String label) {
+  return Expanded(
+    child: Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Color(0xFF7700FF).withOpacity(0.21),
+        borderRadius: BorderRadius.circular(12),
       ),
-    );
-  }
+      child: Column(
+        children: [
+          Text(value,
+              style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black)),
+          SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 16, color: Colors.grey[700])),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildInfoRow(IconData icon, String text) {
     return Padding(

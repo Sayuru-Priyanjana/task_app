@@ -91,7 +91,7 @@ class _AddProjectMembersState extends State<AddProjectMembers> {
     return Scaffold(
       backgroundColor: Color.lerp(Colors.white, Color(0xFF7C46F0), 0.15)!,
       appBar: AppBar(
-        title: Text('Add Project Members'),
+        title: Text('Add Members'),
         actions: [
           IconButton(
             icon: Icon(Icons.save),

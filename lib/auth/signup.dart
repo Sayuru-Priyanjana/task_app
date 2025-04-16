@@ -131,8 +131,7 @@ class _SignupPageState extends State<SignupPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _buildSocialButton('LinkedIn', 'assets/linkedin.png',
-                            Color(0xFF0077B5), Colors.white),
+                        
                         SizedBox(width: 15),
                         _buildSocialButton('Google', 'assets/google.png',
                             Colors.white, Colors.black),
@@ -203,9 +202,15 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  Widget _buildSocialButton(
-      String label, String assetPath, Color backgroundColor, Color textColor) {
-    return ElevatedButton.icon(
+ Widget _buildSocialButton(
+  String label,
+  String assetPath,
+  Color backgroundColor,
+  Color textColor,
+) {
+  return SizedBox(
+    width: 300,
+    child: ElevatedButton.icon(
       onPressed: () {},
       icon: Image.asset(
         assetPath,
@@ -223,6 +228,9 @@ class _SignupPageState extends State<SignupPage> {
         ),
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  
 }

@@ -71,7 +71,7 @@ class _MembersPageState extends State<MembersPage> {
         title: Text('Select Members'),
         actions: [
           IconButton(
-            icon: Icon(Icons.check, color: Colors.white),
+            icon: Icon(Icons.check, color: const Color.fromARGB(255, 0, 0, 0)),
             onPressed: () => Navigator.pop(context, _selectedMembers.toList()),
           )
         ],

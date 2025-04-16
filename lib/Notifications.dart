@@ -67,7 +67,7 @@ class NotificationsPage extends StatelessWidget {
         children: [
           _buildNotificationSection(
             "Recent Activities",
-            const Color(0xFF7700FF).withOpacity(0.21),
+            const Color.fromRGBO(119, 0, 255, 1).withOpacity(0.21),
             notifications.map((entry) => _buildNotificationItem(
               Map<String, dynamic>.from(entry.value))).toList(),
           ),
@@ -140,14 +140,14 @@ class NotificationsPage extends StatelessWidget {
                       fontSize: 14),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    isTaskCompleted
-                        ? 'in "${notification['projectName'] ?? 'Project'}"'
-                        : 'For "${notification['projectName'] ?? 'Project"'}',
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12),
-                  ),
+                  // Text(
+                  //   isTaskCompleted
+                  //       ? 'in "${notification['projectName'] ?? 'Project'}"'
+                  //       : 'For "${notification['projectName'] ?? 'Project"'}',
+                  //   style: const TextStyle(
+                  //     color: Colors.grey,
+                  //     fontSize: 12),
+                  // ),
                   if (isTaskCompleted) ...[
                     const SizedBox(height: 8),
                     Row(
