@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'catogery_projects.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:math';
 
 
 class HomePage extends StatefulWidget {
@@ -491,16 +492,16 @@ Future<String?> getSavedIp() async {
     );
   }
 
-  Color _getCategoryColor(String category) {
-    const colors = {
-      'Office': Colors.lightBlue,
-      'Personal': Colors.orangeAccent,
-      'Study': Colors.purple,
-      'Shopping': Colors.pink,
-      'Other': Colors.green,
-    };
-    return colors[category] ?? Colors.grey;
-  }
+Color _getCategoryColor(String category) {
+  final random = Random(category.hashCode);
+  // Generate colors from a hue spectrum (0-360 degrees)
+  return HSVColor.fromAHSV(
+    1.0,
+    random.nextDouble() * 360,  // Hue (0-360)
+    0.7 + random.nextDouble() * 0.3,  // Saturation (0.7-1.0)
+    0.8 + random.nextDouble() * 0.2,  // Value/Brightness (0.8-1.0)
+  ).toColor();
+}
 
   Widget _buildTaskCard(String title, String category, Color progressColor) {
     return Container(

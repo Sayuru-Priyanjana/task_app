@@ -151,7 +151,7 @@ class _AddProjectPageState extends State<AddProjectPage> {
               Text(
                 _dueDate == null
                     ? "Due Date: Add Due Date"
-                    : "Due Date: ${_dueDate!.toLocal()}".split(' ')[0],
+                    : "Due Date: ${_dueDate!.toLocal().toString().split(' ')[0]}",
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.black,

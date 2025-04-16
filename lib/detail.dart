@@ -217,9 +217,10 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
     final taskSnapshot = await taskRef.get();
     if (taskSnapshot.exists) {
       final taskData = Map<dynamic, dynamic>.from(taskSnapshot.value as Map);
+      final projectData = Map<dynamic, dynamic>.from(projectSnapshot.value as Map);
       final complextivity = taskData['complextivity'] as int? ?? 1;
       final points = complextivity * 5;
-      final assignTo = List<String>.from(taskData['assign_to'] ?? []);
+      final assignTo = List<String>.from(projectData['assign_to'] ?? []);
       final taskName = taskData['name']?.toString() ?? 'Unnamed Task';
 
       // Notification payload
@@ -283,6 +284,8 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
     _sortTasksLocally();
   }
 }
+ 
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(

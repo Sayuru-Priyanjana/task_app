@@ -386,7 +386,7 @@ Future<void> _loadCurrentUser() async {
         GestureDetector(
           onTap: _showPriorityOptions,
           child: Text(
-            priorityLabels[_priority]!,
+            priorityLabels[_complexity]!,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -425,7 +425,7 @@ Future<void> _loadCurrentUser() async {
                 ),
                 title: Text("${entry.key} - ${entry.value}"),
                 onTap: () {
-                  setState(() => _priority = entry.key);
+                  setState(() => _complexity = entry.key);
                   Navigator.pop(context);
                 },
               )),
@@ -437,131 +437,164 @@ Future<void> _loadCurrentUser() async {
   }
 
   Widget _buildDetailsCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Task Details",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: _selectDependencies,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.link, size: 20, color: Colors.deepPurple),
-                      SizedBox(width: 8),
-                      Text(
-                        "Dependencies",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _dependencies
-                        .map((task) => Chip(
-                              label: Text(task),
-                              backgroundColor: Colors.grey[200],
-                              labelStyle: const TextStyle(color: Colors.black87),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ))
-                        .toList(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTeamSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 8, bottom: 8),
-          child: Text(
-            "Team Members",
+  return Card(
+    elevation: 2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Task Details",
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
             ),
           ),
-        ),
-        SizedBox(
-          height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: _assignedMembers.length + 1,
-            itemBuilder: (context, index) {
-              if (index == _assignedMembers.length) {
-                return Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: CircleAvatar(
-                    radius: 36,
-                    backgroundColor: Colors.grey[200],
-                    child: IconButton(
-                      icon: const Icon(Icons.add, size: 28),
-                      onPressed: _selectMembers,
-                    ),
-                  ),
-                );
-              }
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 36,
-                      backgroundColor: _getMemberColor(index),
-                      child: Text(
-                        _getInitials(_assignedMembers[index]),
-                        style: const TextStyle(
-                          fontSize: 24,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: _selectDependencies,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.link, size: 20, color: Colors.deepPurple),
+                    SizedBox(width: 8),
                     Text(
-                      _assignedMembers[index].split('@').first,
-                      style: const TextStyle(fontSize: 14),
+                      "Dependencies",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                 ),
-              );
-            },
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _dependencies
+                      .map((task) => Chip(
+                            label: Text(task),
+                            deleteIcon: const Icon(Icons.close, size: 18),
+                            onDeleted: () {
+                              setState(() {
+                                _dependencies.remove(task);
+                              });
+                            },
+                            backgroundColor: Colors.grey[200],
+                            labelStyle: const TextStyle(color: Colors.black87),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildTeamSection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Padding(
+        padding: EdgeInsets.only(left: 8, bottom: 8),
+        child: Text(
+          "Team Members",
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
           ),
         ),
-      ],
-    );
-  }
+      ),
+      SizedBox(
+        height: 100,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _assignedMembers.length + 1,
+          itemBuilder: (context, index) {
+            if (index == _assignedMembers.length) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: CircleAvatar(
+                  radius: 36,
+                  backgroundColor: Colors.grey[200],
+                  child: IconButton(
+                    icon: const Icon(Icons.add, size: 28),
+                    onPressed: _selectMembers,
+                  ),
+                ),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Stack(
+                children: [
+                  Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundColor: _getMemberColor(index),
+                        child: Text(
+                          _getInitials(_assignedMembers[index]),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _assignedMembers[index].split('@').first,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _assignedMembers.removeAt(index);
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.red,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildInfoItem(IconData icon, String title, String value,
       {VoidCallback? onTap}) {
