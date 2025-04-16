@@ -16,7 +16,44 @@ class CategoryProjectsScreen extends StatefulWidget {
 class _CategoryProjectsScreenState extends State<CategoryProjectsScreen> {
   List<Map<String, dynamic>> selectedProjects = [];
   bool showRemoveButton = false;
+Future<void> _removeCategoryFromProject(String projectId) async {
+  final prefs = await SharedPreferences.getInstance();
+  final currentUserEmail = prefs.getString('user_email');
 
+  if (currentUserEmail == null) return;
+
+  final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
+  final _db = FirebaseDatabase.instance.ref();
+
+  try {
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    // Set category to "Uncategorized" instead of null
+    await _db.child('members/$sanitizedEmail/projects/$projectId/catogory')
+      .set("Uncategorized");
+
+    // Close loading dialog
+    if (mounted) Navigator.pop(context);
+
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Project moved to Uncategorized')),
+    );
+  } catch (e) {
+    // Close loading dialog if still open
+    if (mounted) Navigator.pop(context);
+    
+    // Show error message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error: ${e.toString()}')),
+    );
+  }
+}
   @override
   Widget build(BuildContext context) {
     final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -25,16 +62,15 @@ class _CategoryProjectsScreenState extends State<CategoryProjectsScreen> {
     return FutureBuilder(
       future: SharedPreferences.getInstance(),
       builder: (context, snapshot) {
- if (snapshot.hasData) {
-  final prefs = snapshot.data as SharedPreferences;
-  final currentUserEmail = prefs.getString('user_email');
+        if (snapshot.hasData) {
+          final prefs = snapshot.data as SharedPreferences;
+          final currentUserEmail = prefs.getString('user_email');
 
-  if (currentUserEmail == null) {
-    return Center(child: Text("User not logged in"));
-  }
+          if (currentUserEmail == null) {
+            return Center(child: Text("User not logged in"));
+          }
 
-  final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
-
+          final sanitizedEmail = currentUserEmail.replaceAll('.', ',');
           
           return StreamBuilder(
             stream: _db.child('members/$sanitizedEmail/projects').onValue,
@@ -91,41 +127,52 @@ class _CategoryProjectsScreenState extends State<CategoryProjectsScreen> {
                     ),
                   ],
                 ),
-                body: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: ListView.builder(
-                              itemCount: projects.length,
-                              itemBuilder: (context, index) {
-                                final project = projects[index];
-                                final isSelected = selectedProjects.contains(project);
-                                return GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => DetailPage(projectId: project['id']),
-                                      ),
-                                    );
-                                  },
-                                  child: ProjectCard(
-                                    title: project['title'],
-                                    dueDate: project['dueDate'],
-                                    isSelected: isSelected,
-                                  ),
-                                );
-                              },
+                body: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                  child: ListView.builder(
+                    itemCount: projects.length,
+                    itemBuilder: (context, index) {
+                      final project = projects[index];
+                      final isSelected = selectedProjects.contains(project);
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DetailPage(projectId: project['id']),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Remove selected button
-                  ],
+                          );
+                        },
+                        onLongPress: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: Text("Remove from Category"),
+                              content: Text("Remove this project from ${widget.category} category?"),
+                              actions: [
+                                TextButton(
+                                  child: Text("Cancel"),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                                TextButton(
+                                  child: Text("Remove", style: TextStyle(color: Colors.red)),
+                                  onPressed: () async {
+                                    Navigator.pop(context);
+                                    await _removeCategoryFromProject(project['id']);
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: ProjectCard(
+                          title: project['title'],
+                          dueDate: project['dueDate'],
+                          isSelected: isSelected,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               );
             },
@@ -163,7 +210,8 @@ class ProjectCard extends StatelessWidget {
             color: Colors.black26,
             blurRadius: 6,
             offset: Offset(2, 2),
-      )],
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

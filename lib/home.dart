@@ -16,6 +16,7 @@ import 'catogery_projects.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:math';
+import 'dart:async'; // Add this import
 
 
 class HomePage extends StatefulWidget {
@@ -508,15 +509,7 @@ Color _getCategoryColor(String category) {
       margin: EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: category == "Office Project"
-            ? Colors.lightBlue[100]
-            : category == "Personal Project"
-                ? Colors.orange[100]
-                : category == "Events"
-                    ? Colors.pink[100]
-                    : category == "My Project"
-                        ? Colors.purple[100]
-                        : Colors.lightBlue[200],
+        color:const Color.fromRGBO(119, 0, 255, 1).withOpacity(0.21),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -528,7 +521,7 @@ Color _getCategoryColor(String category) {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
           LinearProgressIndicator(
-              value: 0.5,
+              value: 1,
               color: progressColor,
               backgroundColor: Colors.grey[300]),
         ],
@@ -670,16 +663,17 @@ Color _getCategoryColor(String category) {
   );
 }
 
-  Widget _buildTaskGroup(
+ Widget _buildTaskGroup(
   String title, 
   int tasks, 
   double progress,
   Color progressColor, 
   BuildContext context, 
-  VoidCallback? onTap, // Changed to VoidCallback
+  VoidCallback? onTap,
 ) {
   return GestureDetector(
-    onTap: onTap, // Use the provided callback
+    onTap: onTap,
+    onLongPress: () => _showDeleteCategoryDialog(context, title),
     child: Container(
       margin: EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -720,5 +714,81 @@ Color _getCategoryColor(String category) {
   );
 }
 
+Future<bool> _showDeleteCategoryDialog(BuildContext context, String categoryName) async {
+  final completer = Completer<bool>();
+  String? sanitizedEmail = userEmail?.replaceAll('.', ',');
+  final memberRef = FirebaseDatabase.instance.ref('members/$sanitizedEmail');
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text("Delete Category"),
+        content: Text("Are you sure you want to delete the category '$categoryName'? All projects in this category will be moved to 'Uncategorized'."),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              completer.complete(false);
+            },
+            child: Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                // Show loading indicator
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => Center(child: CircularProgressIndicator()),
+                );
+
+                // 1. Get current data
+                final snapshot = await memberRef.get();
+                final userData = snapshot.value as Map<dynamic, dynamic>;
+                final currentCategories = (userData['categories'] as List?)?.cast<String>() ?? [];
+                final projectsMap = userData['projects'] as Map<dynamic, dynamic>? ?? {};
+
+                // 2. Prepare updates
+                final Map<String, dynamic> updates = {};
+
+                // 2a. Update categories list
+                final updatedCategories = currentCategories.where((c) => c != categoryName).toList();
+                updates['categories'] = updatedCategories;
+
+                // 2b. Find and update affected projects
+                projectsMap.forEach((projectId, projectData) {
+                  if (projectData['catogory'] == categoryName) {
+                    updates['projects/$projectId/catogory'] = 'Uncategorized'; // or set to null
+                  }
+                });
+
+                // 3. Execute all updates atomically
+                await memberRef.update(updates);
+
+                // 4. Close dialogs
+                Navigator.pop(context); // Close loading dialog
+                Navigator.pop(context); // Close delete confirmation dialog
+
+                completer.complete(true);
+              } catch (e) {
+                Navigator.pop(context); // Close loading dialog if still open
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error deleting category: ${e.toString()}')),
+                  );
+                }
+                completer.complete(false);
+              }
+            },
+            child: Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      );
+    },
+  );
+
+  return completer.future;
+}
 
 }
