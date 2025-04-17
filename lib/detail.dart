@@ -468,81 +468,118 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
     return months[month - 1];
   }
 
-  Widget _buildAssignedSection() {
+Widget _buildAssignedSection() {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            "Assigned to",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      const Padding(
+        padding: EdgeInsets.only(left: 8, bottom: 8),
+        child: Text(
+          "Assigned to",
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
           ),
-          GestureDetector(
-            onTap: () async {
-              final selected = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AddProjectMembers(
-                    projectId: widget.projectId,
-                    currentUserEmail: _currentUserEmail,
-                    existingMembers: _assignedMembers,
-                  ),
+        ),
+      ),
+      SizedBox(
+        height: 80, // Increased height to accommodate names
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: _assignedMembers.length + 1,
+          itemBuilder: (context, index) {
+            // Add button at the end
+            if (index == _assignedMembers.length) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: Colors.grey[200],
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.add, size: 20),
+                        onPressed: () async {
+                          final selected = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AddProjectMembers(
+                                projectId: widget.projectId,
+                                currentUserEmail: _currentUserEmail,
+                                existingMembers: _assignedMembers,
+                              ),
+                            ),
+                          );
+                          if (selected != null) {
+                            final updatedMembers = List<String>.from(
+                              [..._assignedMembers, ...selected],
+                            ).toSet().toList();
+                            final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+                            await _db
+                                .child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
+                                .set(updatedMembers);
+                            setState(() => _assignedMembers = updatedMembers);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Add',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
                 ),
               );
-
-              if (selected != null) {
-                final updatedMembers = List<String>.from(
-                  [..._assignedMembers, ...selected],
-                ).toSet().toList();
-
-                final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
-                await _db
-                    .child('members/$sanitizedEmail/projects/${widget.projectId}/assign_to')
-                    .set(updatedMembers);
-
-                setState(() => _assignedMembers = updatedMembers);
-              }
-            },
-            child: CircleAvatar(
-              radius: 20,
-              backgroundColor: Colors.transparent,
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.black,
-                    width: 2,
+            }
+            // Member avatars
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: _getAvatarColor(_assignedMembers[index]),
+                    child: Text(
+                      _getInitials(_assignedMembers[index]),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
-                child: Icon(
-                  Icons.add,
-                  color: Colors.deepPurple,
-                  size: 20,
-                ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: 60, // Constrain name width
+                    child: Text(
+                      _assignedMembers[index].split('@').first,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
-      ),
-      SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        children: _assignedMembers.map((email) {
-          return CircleAvatar(
-            backgroundColor: _getAvatarColor(email),
-            child: Text(
-              _getInitials(email),
-              style: TextStyle(color: Colors.white),
-            ),
-          );
-        }).toList(),
+            );
+          },
+        ),
       ),
     ],
   );
 }
-
+ 
   Widget _buildTaskSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:task_app/Insights.dart';
+import 'Insights.dart';
 import 'add.dart';
 import 'budget.dart';
 import 'office.dart';
