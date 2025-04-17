@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:task_app/projects.dart';
+import 'projects.dart';
 import 'detail.dart';
 
 class Personalprojectscreen extends StatefulWidget {
