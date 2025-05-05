@@ -130,63 +130,116 @@ Future<void> _loadHeatmapData() async {
     });
   }
 
-  Widget _buildHeatMap() {
-    List<Color> colors = [
-      Colors.black,
-      Colors.teal,
-      Colors.lightBlueAccent,
-      Colors.deepPurpleAccent
-    ];
+Widget _buildHeatMap() {
+  // Activity intensity colors (from low to high)
+  final List<Color> intensityColors = [
+    Colors.grey[300]!,    // Low
+    Color(0xFF9473F1),    // Medium
+    Color(0xFF7C46F0),    // High
+    Colors.deepPurple,    // Very High
+  ];
 
-    List<String> months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec"
-    ];
+  // Month labels (April is index 3, May is 4)
+  final List<String> months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"];
 
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(11, (index) {
-            return Text(
-              months[index],
-              style: TextStyle(color: Colors.white70, fontSize: 10),
-            );
-          }),
-        ),
-        SizedBox(height: 5),
-        Column(
-          children: List.generate(6, (row) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(11, (col) {
+  return Column(
+    children: [
+      // Month labels
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(months.length, (index) {
+          return Text(
+            months[index],
+            style: TextStyle(color: Colors.white70, fontSize: 10),
+          );
+        }),
+      ),
+      SizedBox(height: 8),
+      // Heatmap grid
+      Column(
+        children: List.generate(5, (row) { // 5 rows
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(months.length, (col) {
+              // April (col=3) - High activity
+              if (col == 3) {
                 return Container(
-                  margin: EdgeInsets.all(2),
-                  width: 16,
-                  height: 16,
+                  width: 10,
+                  height: 10,
+                  margin: EdgeInsets.all(1),
                   decoration: BoxDecoration(
-                    color: colors[(row + col) % colors.length],
-                    borderRadius: BorderRadius.circular(4),
+                    color: intensityColors[row % intensityColors.length], // Varying intensity
+                    shape: BoxShape.circle,
                   ),
                 );
-              }),
-            );
-          }),
+              } 
+              // May (col=4) - Low activity (only 2 dots)
+              else if (col == 4 && row % 2 == 0) {
+                return Container(
+                  width: 8,
+                  height: 8,
+                  margin: EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: intensityColors[1], // Medium intensity
+                    shape: BoxShape.circle,
+                  ),
+                );
+              } 
+              // Other months - empty
+              else {
+                return Container(
+                  width: 8,
+                  height: 8,
+                  margin: EdgeInsets.all(1),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                  ),
+                );
+              }
+            }),
+          );
+        }),
+      ),
+      // Legend
+      SizedBox(height: 10),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        // children: [
+        //   _buildLegendDot(intensityColors[0], "Low"),
+        //   _buildLegendDot(intensityColors[1], "Medium"),
+        //   _buildLegendDot(intensityColors[2], "High"),
+        // ],
+      ),
+    ],
+  );
+}
+
+// Helper widget for legend dots
+Widget _buildLegendDot(Color color, String label) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    child: Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(color: Colors.white70, fontSize: 10),
         ),
       ],
-    );
-  }
-
+    ),
+  );
+}
+  
+  
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(

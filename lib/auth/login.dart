@@ -205,14 +205,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       obscureText: true,
                     ),
-                    SizedBox(height: 10),
-                    TextButton(
-                      onPressed: () {},
-                      child: Text(
-                        'Forgot Password?',
-                        style: TextStyle(color: Color(0xFF5F33E1)),
-                      ),
-                    ),
+
                     SizedBox(height: 10),
                     // Login Button
                     ElevatedButton(

@@ -180,6 +180,74 @@ class _DetailPageState extends State<DetailPage> {
     setState(() => _tasks = Map.fromEntries(entries));
   }
 
+
+
+
+
+
+
+Future<void> _updateDueDate() async {
+  final now = DateTime.now();
+  final initialDate = _dueDate != null 
+      ? DateTime.parse(_dueDate!) 
+      : now.add(const Duration(days: 1)); // Default to tomorrow if no date set
+
+  final DateTime? pickedDate = await showDatePicker(
+    context: context,
+    initialDate: initialDate,
+    firstDate: now,
+    lastDate: DateTime(now.year + 5), // 5 years in future
+    builder: (context, child) {
+      return Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.light(
+            primary: Colors.deepPurple, // Header background color
+            onPrimary: Colors.white, // Header text color
+            onSurface: Colors.black, // Body text color
+          ),
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.deepPurple, // Button text color
+            ),
+          ),
+        ),
+        child: child!,
+      );
+    },
+  );
+
+  if (pickedDate != null) {
+    final formattedDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+    final sanitizedEmail = _currentUserEmail.replaceAll('.', ',');
+    
+    try {
+      await _db.child('members/$sanitizedEmail/projects/${widget.projectId}').update({
+        'due_date': formattedDate
+      });
+      
+      setState(() {
+        _dueDate = formattedDate;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_dueDate == null 
+              ? 'Due date set to ${_formatDate(formattedDate)}' 
+              : 'Due date updated to ${_formatDate(formattedDate)}'),
+          duration: const Duration(seconds: 2),
+        )
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update date: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        )
+      );
+    }
+  }
+}
+
 Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
   // Local state update
   setState(() {
@@ -425,14 +493,35 @@ Future<void> _toggleTaskStatus(String taskId, bool newStatus) async {
                       style: TextStyle(color: Colors.black),
                     ),
               SizedBox(height: 8),
-              if (_dueDate != null)
-                Text(
-                  "Due date: ${_formatDate(_dueDate!)}",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
+              
+             
+Padding(
+  padding: const EdgeInsets.symmetric(vertical: 4.0),
+  child: Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        _dueDate != null ? "Due: ${_formatDate(_dueDate!)}" : "No due date set",
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: _dueDate != null ? Colors.black : Colors.grey[600],
+          fontStyle: _dueDate == null ? FontStyle.italic : FontStyle.normal,
+        ),
+      ),
+      SizedBox(width: 8),
+      GestureDetector(
+        onTap: _updateDueDate,
+        child: Icon(
+          _dueDate != null ? Icons.edit : Icons.add,
+          size: 16,
+          color: Colors.deepPurple,
+        ),
+      ),
+    ],
+  ),
+),
+
+
               if (_category != null)
                 Text(
                   "Category: $_category",
